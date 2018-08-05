@@ -88,7 +88,7 @@ namespace NRaft
                 SetPeerId(peerId);
                 this.role = Role.Follower;
                 RescheduleElection();
-                //  this.electionTimeout += 10000; // TODO add an initial grace period on startup
+                this.electionTimeout += 1000; // TODO add an initial grace period on startup
                 LaunchPeriodicTasksThread();
             }
         }
@@ -113,7 +113,7 @@ namespace NRaft
                     logger.LogInformation($" - {p} has matchIndex {p.matchIndex}");
                     if (role == Role.Leader)
                     {
-                        // be nice and send a    update to all the peers with our  current commit index before we shutdown
+                        // be nice and send a update to all the peers with our  current commit index before we shutdown
                         long prevLogIndex = p.nextIndex - 1;
                         long prevLogTerm = log.GetTerm(prevLogIndex);
                         rpc.SendAppendEntries(p.peerId, currentTerm, myPeerId, prevLogIndex, prevLogTerm, null, log.CommitIndex, null);
@@ -187,8 +187,8 @@ namespace NRaft
         {
             lock (this)
             {
-                this.electionTimeout = DateTimeOffset.Now.ToUnixTimeMilliseconds() + config.getElectionTimeoutFixedMillis()
-                      + random.Next(config.getElectionTimeoutRandomMillis());
+                this.electionTimeout = DateTimeOffset.Now.ToUnixTimeMilliseconds() + config.ElectionTimeoutFixedMillis
+                      + random.Next(config.ElectionTimeoutRandomMillis);
             }
         }
 
@@ -332,7 +332,7 @@ namespace NRaft
                     {
                         peer.nextIndex = 1;
                         peer.matchIndex = 0;
-                        rpc.SendRequestVote(config.getClusterName(), peer.peerId, currentTerm, myPeerId, log.LastIndex, log.LastTerm,
+                        rpc.SendRequestVote(config.ClusterName, peer.peerId, currentTerm, myPeerId, log.LastIndex, log.LastTerm,
                               (term, voteGranted) =>
                               {
                                   lock (this)
@@ -368,7 +368,7 @@ namespace NRaft
             lock (this)
             {
 
-                if (config.getClusterName() != clusterName || !IsValidPeer(candidateId))
+                if (config.ClusterName != clusterName || !IsValidPeer(candidateId))
                 {
                     return;
                 }
@@ -465,14 +465,14 @@ namespace NRaft
                 {
                     peer.appendPending = false; // time out the last append
                 }
-                if (!peer.appendPending && (peer.nextIndex < log.LastIndex || now > peer.lastAppendMillis + config.getHeartbeatMillis()))
+                if (!peer.appendPending && (peer.nextIndex < log.LastIndex || now > peer.lastAppendMillis + config.HeartbeatMillis))
                 {
                     Debug.Assert(peer.nextIndex > 0);
 
                     // for a fresh peer we'll start with an empty list of entries so we can learn what index the node is already on in it's log
                     // fetch entries from log to send to the peer
                     Entry[] entries = (!peer.fresh && peer.snapshotTransfer == null)
-                      ? log.GetEntries(peer.nextIndex, config.getMaxEntriesPerRequest()) : null;
+                      ? log.GetEntries(peer.nextIndex, config.MaxEntriesPerRequest) : null;
 
                     // if this peer needs entries we no longer have, then send them a snapshot
                     if (!peer.fresh && peer.nextIndex > 0 && peer.nextIndex < log.FirstIndex && entries == null)
@@ -640,7 +640,7 @@ namespace NRaft
                     long snapshotIndex = StateManager.GetSnapshotIndex(peer.snapshotTransfer);
                     if (snapshotIndex > 0)
                     {
-                        int partSize = config.getSnapshotPartSize();
+                        int partSize = config.SnapshotPartSize;
                         long len = peer.snapshotTransfer.Length;
                         var data = RaftUtil.GetFilePart(peer.snapshotTransfer, part * partSize,
                          (int)Math.Min(partSize, len - part * partSize));
@@ -722,7 +722,7 @@ namespace NRaft
             handler(false);
         }
 
-        public void HandleClientRequest(Command command, ClientResponseHandler handler)
+        public void HandleClientRequest(ICommand command, ClientResponseHandler handler)
         {
             lock (this)
             {
@@ -730,7 +730,7 @@ namespace NRaft
             }
         }
 
-        public bool ExecuteCommand(Command command, ClientResponseHandler handler = null)
+        public bool ExecuteCommand(ICommand command, ClientResponseHandler handler = null)
         {
             lock (this)
             {

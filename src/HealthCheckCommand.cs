@@ -5,7 +5,7 @@ namespace NRaft
 {
 
 
-    public class HealthCheckCommand : Command
+    public class HealthCheckCommand : Command<IInternalStateMachine>
     {
         public int CommandId => StateManager.COMMAND_ID_HEALTH_CHECK;
 
@@ -19,9 +19,9 @@ namespace NRaft
             val = random.Next();
         }
 
-        public void ApplyTo(object state)
+        public void ApplyTo(IInternalStateMachine state)
         {
-            ((StateManager)state).ApplyHealthCheck(val);
+            state.ApplyHealthCheck(val);
         }
 
         public void Serialize(BinaryWriter writer) { writer.Write(val); }

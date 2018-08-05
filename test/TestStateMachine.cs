@@ -125,7 +125,7 @@ namespace NRaftTest
         }
     }
 
-    public class TestCommand : Command
+    public class TestCommand : Command<TestStateMachine>
     {
         public int CommandId => 1000;
 
@@ -140,10 +140,10 @@ namespace NRaftTest
             _value = value;
         }
 
-        public void ApplyTo(object state)
+        public void ApplyTo(TestStateMachine state)
         {
             Console.WriteLine($">>>>>>> Update key {_key} with {_value}");
-            ((TestStateMachine)state).AddValue(_key, _value);
+            state.AddValue(_key, _value);
         }
 
         public void Deserialize(BinaryReader reader, int fileVersion)
@@ -237,7 +237,7 @@ namespace NRaftTest
             }
         }
 
-        public void SendIssueCommand(int peerId, Command command, ClientResponseHandler handler)
+        public void SendIssueCommand(int peerId, ICommand command, ClientResponseHandler handler)
         {
             if (rafts.TryGetValue(peerId, out var r))
             {

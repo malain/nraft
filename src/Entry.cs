@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 
 namespace NRaft {
 
@@ -8,15 +9,17 @@ namespace NRaft {
     {
         private readonly long term;
         private readonly long index;
-        private readonly Command command;
+        private readonly ICommand command;
 
         public long Term => term;
 
         public long Index => index;
 
-        public Command Command => command;
+        public ICommand Command => command;
 
-        public Entry(long term, long index, Command command)
+        private MethodInfo applyMethod;
+
+        public Entry(long term, long index, ICommand command)
         {
             this.term = term;
             this.index = index;
@@ -53,6 +56,14 @@ namespace NRaft {
         public override string ToString()
         {
             return $"Entry<{Term}:{Index}>";
+        }
+
+        internal void InvokeApplyTo(IStateMachine stateMachine)
+        {
+            if( applyMethod == null)
+                applyMethod = Command.GetType().GetMethod("ApplyTo");
+                
+            applyMethod.Invoke(Command, new object[] { stateMachine });
         }
     }
 }

@@ -37,9 +37,9 @@ namespace NRaftTest
 
             var manager = new TestStateMachine();
             var state =  new StateManager(manager);
-            Config config = new Config().setLogDir(logDir);
-            config.setEntriesPerFile(16);
-            config.setEntriesPerSnapshot(32);
+            Config config = new Config().WithLogDir(logDir);
+            config.WithEntriesPerFile(16);
+            config.WithEntriesPerSnapshot(32);
             var log = new Log(config, state);
 
             // write a bunch of entries
@@ -78,7 +78,7 @@ namespace NRaftTest
 
             var manager = new TestStateMachine();
             var state = new StateManager(manager);
-            Config config = new Config().setLogDir(logDir);
+            Config config = new Config().WithLogDir(logDir);
 
             // create a log
             var log = new Log(config, state);
@@ -163,7 +163,7 @@ namespace NRaftTest
 
             for (int i = 1; i <= NUM_PEERS; i++)
             {
-                Config cfg = new Config().setLogDir(logDirs[i - 1]).setClusterName("TEST");
+                Config cfg = new Config().WithLogDir(logDirs[i - 1]).WithClusterName("TEST");
                 RaftEngine raft = new RaftEngine(cfg, new TestStateMachine(), new RPC(rafts));
                 raft.SetPeerId(i);
                 for (int j = 1; j <= NUM_PEERS; j++)

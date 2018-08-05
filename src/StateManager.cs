@@ -6,7 +6,14 @@ using Microsoft.Extensions.Logging;
 
 namespace NRaft
 {
-    internal partial class StateManager
+    public interface IInternalStateMachine : IStateMachine
+    {
+        PeerInfo AddPeer(string host, int port, bool bootstrap);
+        void DeletePeer(int peerId);
+        void ApplyHealthCheck(long val);
+    }
+
+    internal partial class StateManager: IInternalStateMachine
     {
         public static int SNAPSHOT_FILE_VERSION = 1;
         public static int COMMAND_ID_ADD_PEER = -1;
@@ -32,6 +39,22 @@ namespace NRaft
                 // logger.error(e.Message, e);
                 return 0;
             }
+        }
+        void IStateMachine.LoadState(BinaryReader reader)
+        {
+        }
+
+        public void RegisterCommands(ICommandManager manager)
+        {
+            manager.RegisterCommand<AddPeerCommand>();
+            manager.RegisterCommand<DelPeerCommand>();
+            manager.RegisterCommand<NewTermCommand>();
+            manager.RegisterCommand<HealthCheckCommand>();
+            StateMachine.RegisterCommands(manager);
+        }
+
+        void IStateMachine.SaveState(BinaryWriter writer)
+        {
         }
     }
 
@@ -70,9 +93,7 @@ namespace NRaft
 
     public interface IStateMachine
     {
-
         void SaveState(System.IO.BinaryWriter writer);
-
         void LoadState(System.IO.BinaryReader reader);
         void RegisterCommands(ICommandManager manager);
     }
@@ -223,7 +244,9 @@ namespace NRaft
         {
             //Debug.Assert (this.index + 1 == entry.index) : (this.index + 1) + "!=" + entry.index;
             Debug.Assert(this.term <= entry.Term);
-            entry.Command.ApplyTo(this.StateMachine);
+
+            entry.InvokeApplyTo(this.StateMachine);
+
             this.index = entry.Index;
             this.term = entry.Term;
             lastCommandAppliedMillis = DateTime.Now.Millisecond;

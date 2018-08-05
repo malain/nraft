@@ -16,7 +16,7 @@ namespace NRaft
         void HandleInstallSnapshotRequest(long term, long index, long length, int partSize, int part, byte[] data,
              InstallSnapshotResponseHandler handler);
 
-        void HandleClientRequest(Command command, ClientResponseHandler handler);
+        void HandleClientRequest(ICommand command, ClientResponseHandler handler);
     }
 
     /**
@@ -34,7 +34,7 @@ namespace NRaft
         void SendInstallSnapshot(int peerId, long term, long index, long length, int partSize, int part, byte[] data,
              InstallSnapshotResponseHandler handler);
 
-        void SendIssueCommand(int peerId, Command command, ClientResponseHandler handler);
+        void SendIssueCommand(int peerId, ICommand command, ClientResponseHandler handler);
     }
 
     ///////// Response Handlers ///////// 
@@ -47,5 +47,5 @@ namespace NRaft
 
     public delegate void ClientResponseHandler(Entry entry);
 
-    public delegate void ClientResponseHandler<C>(C command) where C : Command;
+    public delegate void ClientResponseHandler<C>(C command) where C : ICommand;
 }

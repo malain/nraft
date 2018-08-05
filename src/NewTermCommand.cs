@@ -8,7 +8,7 @@ namespace NRaft
      * which helps facilitate advancing the commitIndex, as we cannot commit any older log entries until we've replicated something in the new
      * term to a majority.
      */
-    public class NewTermCommand : Command
+    public class NewTermCommand : Command<IInternalStateMachine>
     {
         public int CommandId => StateManager.COMMAND_ID_NEW_TERM;
 
@@ -23,7 +23,7 @@ namespace NRaft
             this.term = term;
         }
 
-        public void ApplyTo(object state) { }
+        public void ApplyTo(IInternalStateMachine state) { }
 
         public void Serialize(BinaryWriter writer)
         {

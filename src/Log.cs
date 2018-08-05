@@ -12,7 +12,7 @@ namespace NRaft
 {
     public interface ICommandManager
     {
-        void RegisterCommand<T>() where T : Command;
+        void RegisterCommand<T>() where T : ICommand;
     }
 
     /**
@@ -28,7 +28,7 @@ namespace NRaft
      */
     internal class Log : ICommandManager
     {
-        private Dictionary<int, Func<Command>> commandfactories = new Dictionary<int, Func<Command>>();
+        private Dictionary<int, Func<ICommand>> commandfactories = new Dictionary<int, Func<ICommand>>();
 
         public static readonly ILogger logger = LoggerFactory.GetLogger<Log>();
 
@@ -66,16 +66,11 @@ namespace NRaft
         public bool IsRunning => cancel != null && !cancel.IsCancellationRequested;
         public Log(Config config, StateManager stateManager)
         {
-            RegisterCommand<AddPeerCommand>();
-            RegisterCommand<DelPeerCommand>();
-            RegisterCommand<NewTermCommand>();
-            RegisterCommand<HealthCheckCommand>();
-
-            stateManager.StateMachine.RegisterCommands(this);
+            stateManager.RegisterCommands(this);
 
             this.stateManager = stateManager;
             this.config = config;
-            Directory.CreateDirectory(this.config.getLogDir());
+            Directory.CreateDirectory(this.config.LogDirectory);
 
             // obtain the raft logs lock file
             //  obtainFileLock();
@@ -157,7 +152,7 @@ namespace NRaft
         /**
          * Append a new command to the log. Should only be called by a Leader
          */
-        public Entry Append(long term, Command command)
+        public Entry Append(long term, ICommand command)
         {
             lock (this)
             {
@@ -287,7 +282,7 @@ namespace NRaft
         {
             get
             {
-                return config.getLogDir();
+                return config.LogDirectory;
             }
         }
 
@@ -438,7 +433,7 @@ namespace NRaft
          */
         private string GetFileName(long index, bool forReading)
         {
-            long firstIndexInFile = (index / config.getEntriesPerFile()) * config.getEntriesPerFile();
+            long firstIndexInFile = (index / config.EntriesPerFile) * config.EntriesPerFile;
             var file = Path.Combine(LogDirectoryName, firstIndexInFile.ToString("X16") + ".log");
             if (forReading)
             {
@@ -486,7 +481,7 @@ namespace NRaft
         {
             lock (this)
             {
-                if (index % config.getEntriesPerFile() == 0)
+                if (index % config.EntriesPerFile == 0)
                 {
                     if (writer != null)
                     {
@@ -532,7 +527,7 @@ namespace NRaft
                             {
                                 logger.LogInformation($"Writing new term {e}");
                             }
-                            if ((e.Index % config.getEntriesPerSnapshot()) == 0)
+                            if ((e.Index % config.EntriesPerSnapshot) == 0)
                             {
                                 SaveSnapshot();
                             }
@@ -567,9 +562,9 @@ namespace NRaft
             }
         }
 
-        public Command CreateCommand(int id)
+        public ICommand CreateCommand(int id)
         {
-            if (!commandfactories.TryGetValue(id, out Func<Command> factory))
+            if (!commandfactories.TryGetValue(id, out Func<ICommand> factory))
             {
                 throw new Exception("Could not find command factory for command type " + id);
             }
@@ -577,9 +572,9 @@ namespace NRaft
             return factory();
         }
 
-        public void RegisterCommand<TCommand>() where TCommand : Command
+        public void RegisterCommand<TCommand>() where TCommand : ICommand
         {
-            Func<Command> factory = () => (TCommand)Activator.CreateInstance<TCommand>();
+            Func<ICommand> factory = () => (TCommand)Activator.CreateInstance<TCommand>();
             try
             {
                 var cmd = factory();
@@ -729,10 +724,10 @@ namespace NRaft
         {
             lock (this)
             {
-                if (entries.Count > config.getEntriesPerFile() * 2)
+                if (entries.Count > config.EntriesPerFile * 2)
                 {
 
-                    if (firstIndex > commitIndex || firstIndex > stateManager.Index || firstIndex > lastIndex - config.getEntriesPerFile())
+                    if (firstIndex > commitIndex || firstIndex > stateManager.Index || firstIndex > lastIndex - config.EntriesPerFile)
                     {
                         return;
                     }
@@ -741,7 +736,7 @@ namespace NRaft
                     List<Entry> entriesToKeep = new List<Entry>();
                     foreach (Entry e in entries)
                     {
-                        if (e.Index > commitIndex || e.Index > stateManager.Index || e.Index > lastIndex - config.getEntriesPerFile())
+                        if (e.Index > commitIndex || e.Index > stateManager.Index || e.Index > lastIndex - config.EntriesPerFile)
                         {
                             entriesToKeep.Add(e);
                         }
@@ -759,12 +754,12 @@ namespace NRaft
 
         private void ArchiveOldLogFiles()
         {
-            if (config.getDeleteOldFiles())
+            if (config.DeleteOldFiles)
             {
                 var archiveDir = Path.Combine(LogDirectoryName, "archived");
                 Directory.CreateDirectory(archiveDir);
 
-                long index = commitIndex - (config.getEntriesPerSnapshot() * 4);
+                long index = commitIndex - (config.EntriesPerSnapshot * 4);
                 while (index >= 0)
                 {
                     logger.LogInformation($" Checking ::  {index.ToString("X16")}");
@@ -779,7 +774,7 @@ namespace NRaft
                     {
                         break; // done archiving
                     }
-                    index -= config.getEntriesPerFile();
+                    index -= config.EntriesPerFile;
                 }
 
                 var p = new Regex("raft\\.([0-9A-F]{16})\\.snapshot");
@@ -792,7 +787,7 @@ namespace NRaft
                         logger.LogInformation($"{index.ToString("X16")} Checking {file}: {snapIndex.ToString("X16")}");
                         if (snapIndex < index)
                         {
-                            if (snapIndex % (config.getEntriesPerSnapshot() * 16) == 0)
+                            if (snapIndex % (config.EntriesPerSnapshot * 16) == 0)
                             {
                                 logger.LogInformation($"Archiving old snapshot file {file}");
                                 File.Move(file, Path.Combine(archiveDir, Path.GetFileName(file)));
