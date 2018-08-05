@@ -24,12 +24,12 @@ namespace NRaft
             this.bootstrap = bootstrap;
         }
 
-        public void applyTo(object state)
+        public void ApplyTo(object state)
         {
-            peerId = ((StateManager)state).addPeer(host, port, bootstrap).peerId;
+            peerId = ((StateManager)state).AddPeer(host, port, bootstrap).peerId;
         }
 
-        public void write(BinaryWriter writer)
+        public void Serialize(BinaryWriter writer)
         {
             writer.Write(peerId);
             writer.Write(host);
@@ -37,7 +37,7 @@ namespace NRaft
             writer.Write(bootstrap);
         }
 
-        public void read(BinaryReader reader, int fileVersion)
+        public void Deserialize(BinaryReader reader, int fileVersion)
         {
             peerId = reader.ReadInt32();
             host = reader.ReadString();

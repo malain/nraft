@@ -6,14 +6,15 @@ using Microsoft.Extensions.Logging;
 
 namespace NRaft
 {
-    internal partial class StateManager {
+    internal partial class StateManager
+    {
         public static int SNAPSHOT_FILE_VERSION = 1;
         public static int COMMAND_ID_ADD_PEER = -1;
         public static int COMMAND_ID_DEL_PEER = -2;
         public static int COMMAND_ID_NEW_TERM = -3;
         public static int COMMAND_ID_HEALTH_CHECK = -4;
 
-        public static long getSnapshotIndex(string path)
+        public static long GetSnapshotIndex(string path)
         {
             try
             {
@@ -28,7 +29,7 @@ namespace NRaft
             }
             catch (IOException)
             {
-               // logger.error(e.Message, e);
+                // logger.error(e.Message, e);
                 return 0;
             }
         }
@@ -54,7 +55,7 @@ namespace NRaft
             this.port = port;
         }
 
-        public void write(System.IO.BinaryWriter writer)
+        public void Serialize(System.IO.BinaryWriter writer)
         {
             writer.Write(peerId);
             writer.Write(host);
@@ -67,12 +68,13 @@ namespace NRaft
         }
     }
 
-    public interface IStateMachine {
+    public interface IStateMachine
+    {
 
-        void saveState(System.IO.BinaryWriter writer);
+        void SaveState(System.IO.BinaryWriter writer);
 
-        void loadState(System.IO.BinaryReader reader);
-        void registerCommand(ICommandManager manager);
+        void LoadState(System.IO.BinaryReader reader);
+        void RegisterCommands(ICommandManager manager);
     }
 
     /**
@@ -81,7 +83,7 @@ namespace NRaft
      * It contains the state we want to coordinate across a distributed cluster.
      * 
      */
-    internal partial class StateManager 
+    internal partial class StateManager
     {
         public static readonly ILogger logger = LoggerFactory.GetLogger<StateManager>();
 
@@ -128,12 +130,7 @@ namespace NRaft
             this.StateMachine = stateMachine;
         }
 
-        public SnapshotMode getSnapshotMode()
-        {
-            return SnapshotMode.Blocking;
-        }
-
-        public void writeSnapshot(string path, long prevTerm)
+        public void WriteSnapshot(string path, long prevTerm)
         {
             using (var writer = new System.IO.BinaryWriter(File.OpenWrite(path)))
             { // TODO zip
@@ -146,14 +143,14 @@ namespace NRaft
                 writer.Write(peers.Count);
                 foreach (var peer in peers.Values)
                 {
-                    peer.write(writer);
+                    peer.Serialize(writer);
                 }
 
-                StateMachine.saveState(writer);
+                StateMachine.SaveState(writer);
             }
         }
 
-        public void readSnapshot(string path)
+        public void ReadSnapshot(string path)
         {
             using (var reader = new BinaryReader(File.OpenRead(path)))
             {
@@ -175,50 +172,65 @@ namespace NRaft
                     PeerInfo p = new PeerInfo(reader);
                     peers.Add(p.peerId, p);
                 }
-                StateMachine.loadState(reader);
+                StateMachine.LoadState(reader);
             }
         }
 
         /**
          * Return the time we last applied a command
          */
-        public long getLastCommandAppliedMillis()
+        public long LastCommandAppliedMillis
         {
-            return lastCommandAppliedMillis;
+            get
+            {
+                return lastCommandAppliedMillis;
+            }
         }
 
-        public long getIndex()
+        public long Index
         {
-            return index;
+            get
+            {
+                return index;
+            }
         }
 
-        public long getTerm()
+        public long Term
         {
-            return term;
+            get
+            {
+                return term;
+            }
         }
 
-        public long getPrevIndex()
+        public long PrevIndex
         {
-            return prevIndex;
+            get
+            {
+                return prevIndex;
+            }
         }
 
-        public long getPrevTerm()
+        public long PrevTerm
         {
-            return prevTerm;
+            get
+            {
+                return prevTerm;
+            }
         }
 
-        internal void apply(Entry entry)
+        internal void Apply(Entry entry)
         {
             //Debug.Assert (this.index + 1 == entry.index) : (this.index + 1) + "!=" + entry.index;
             Debug.Assert(this.term <= entry.Term);
-            entry.Command.applyTo(this.StateMachine);
+            entry.Command.ApplyTo(this.StateMachine);
             this.index = entry.Index;
             this.term = entry.Term;
             lastCommandAppliedMillis = DateTime.Now.Millisecond;
-            fireEntryAppliedEvent(entry);
+            FireEntryAppliedEvent(entry);
         }
 
-        private void fireEntryAppliedEvent(Entry entry)
+        private void FireEntryAppliedEvent(Entry entry)
         {
             lock (listeners)
             {
@@ -236,7 +248,7 @@ namespace NRaft
             }
         }
 
-        public void addListener(Action<Entry> listener)
+        public void AddListener(Action<Entry> listener)
         {
             lock (listeners)
             {
@@ -244,7 +256,7 @@ namespace NRaft
             }
         }
 
-        public PeerInfo addPeer(string host, int port, bool bootstrap)
+        public PeerInfo AddPeer(string host, int port, bool bootstrap)
         {
             if (bootstrap)
             {
@@ -261,25 +273,23 @@ namespace NRaft
             return p;
         }
 
-        public void delPeer(int peerId)
+        public void DeletePeer(int peerId)
         {
             peers.Remove(peerId);
         }
 
-        public IEnumerable<PeerInfo> getPeers()
-        {
-            return peers.Values;
-        }
-
-        public void applyHealthCheck(long val)
+        public void ApplyHealthCheck(long val)
         {
             checksum ^= (val * index * ++count);
             //logger.info("CHECKSUM {} = {}:{}", val, checksum, count);
         }
 
-        public long getChecksum()
+        public long Checksum
         {
-            return checksum;
+            get
+            {
+                return checksum;
+            }
         }
     }
 }

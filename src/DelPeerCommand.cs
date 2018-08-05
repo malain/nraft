@@ -19,18 +19,18 @@ namespace NRaft
             this.peerId = peerId;
         }
 
-        public void applyTo(object state)
+        public void ApplyTo(object state)
         {
-            ((StateManager)state).delPeer(peerId);
+            ((StateManager)state).DeletePeer(peerId);
         }
 
-        public void write(BinaryWriter writer)
+        public void Serialize(BinaryWriter writer)
         {
             writer.Write(peerId);
 
         }
 
-        public void read(BinaryReader reader, int fileVersion)
+        public void Deserialize(BinaryReader reader, int fileVersion)
         {
             peerId = reader.ReadInt32();
         }

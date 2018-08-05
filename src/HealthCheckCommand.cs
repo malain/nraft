@@ -19,13 +19,13 @@ namespace NRaft
             val = random.Next();
         }
 
-        public void applyTo(object state)
+        public void ApplyTo(object state)
         {
-            ((StateManager)state).applyHealthCheck(val);
+            ((StateManager)state).ApplyHealthCheck(val);
         }
 
-        public void write(BinaryWriter writer) { writer.Write(val); }
+        public void Serialize(BinaryWriter writer) { writer.Write(val); }
 
-        public void read(BinaryReader reader, int fileVersion) { this.val = reader.ReadInt64(); }
+        public void Deserialize(BinaryReader reader, int fileVersion) { this.val = reader.ReadInt64(); }
     }
 }

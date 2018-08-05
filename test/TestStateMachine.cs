@@ -22,7 +22,7 @@ namespace NRaftTest
             values[key] = value;
         }
 
-        public void loadState(BinaryReader reader)
+        public void LoadState(BinaryReader reader)
         {
             values = new Dictionary<string, string>();
             var count = reader.ReadInt32();
@@ -34,7 +34,7 @@ namespace NRaftTest
             }
         }
 
-        public void saveState(BinaryWriter writer)
+        public void SaveState(BinaryWriter writer)
         {
             writer.Write(values.Count);
             foreach (var kv in values)
@@ -55,9 +55,9 @@ namespace NRaftTest
             return cx;
         }
 
-        public void registerCommand(ICommandManager manager)
+        public void RegisterCommands(ICommandManager manager)
         {
-            manager.registerCommand<TestCommand>();
+            manager.RegisterCommand<TestCommand>();
         }
     }
 
@@ -140,19 +140,19 @@ namespace NRaftTest
             _value = value;
         }
 
-        public void applyTo(object state)
+        public void ApplyTo(object state)
         {
             Console.WriteLine($">>>>>>> Update key {_key} with {_value}");
             ((TestStateMachine)state).AddValue(_key, _value);
         }
 
-        public void read(BinaryReader reader, int fileVersion)
+        public void Deserialize(BinaryReader reader, int fileVersion)
         {
             _key = reader.ReadString();
             _value = reader.ReadString();
         }
 
-        public void write(BinaryWriter writer)
+        public void Serialize(BinaryWriter writer)
         {
             writer.Write(_key);
             writer.Write(_value);
@@ -173,7 +173,7 @@ namespace NRaftTest
             return 100 + rnd.Next(10) * 200;
         }
 
-        public void sendRequestVote(string clusterName, int peerId, long term, int candidateId, long lastLogIndex,
+        public void SendRequestVote(string clusterName, int peerId, long term, int candidateId, long lastLogIndex,
           long lastLogTerm, VoteResponseHandler handler)
         {
             if (rafts.TryGetValue(peerId, out var r))
@@ -184,7 +184,7 @@ namespace NRaftTest
 
                     try
                     {
-                        r.handleVoteRequest(clusterName, term, candidateId, lastLogIndex, lastLogTerm, handler);
+                        r.HandleVoteRequest(clusterName, term, candidateId, lastLogIndex, lastLogTerm, handler);
                     }
                     catch (Exception t)
                     {
@@ -195,7 +195,7 @@ namespace NRaftTest
             }
         }
 
-        public void sendAppendEntries(int peerId, long term, int leaderId, long prevLogIndex, long prevLogTerm,
+        public void SendAppendEntries(int peerId, long term, int leaderId, long prevLogIndex, long prevLogTerm,
                Entry[] entries, long leaderCommit, AppendEntriesResponseHandler handler)
         {
             if (rafts.TryGetValue(peerId, out var r))
@@ -206,7 +206,7 @@ namespace NRaftTest
 
                     try
                    {
-                       r.handleAppendEntriesRequest(term, leaderId, prevLogIndex, prevLogTerm, entries, leaderCommit, handler);
+                       r.HandleAppendEntriesRequest(term, leaderId, prevLogIndex, prevLogTerm, entries, leaderCommit, handler);
                    }
                    catch (Exception t)
                    {
@@ -216,7 +216,7 @@ namespace NRaftTest
             }
         }
 
-        public void sendInstallSnapshot(int peerId, long term, long index, long length, int partSize, int part,
+        public void SendInstallSnapshot(int peerId, long term, long index, long length, int partSize, int part,
                byte[] data, InstallSnapshotResponseHandler handler)
         {
             if (rafts.TryGetValue(peerId, out var r))
@@ -227,7 +227,7 @@ namespace NRaftTest
 
                     try
                    {
-                       r.handleInstallSnapshotRequest(term, index, length, partSize, part, data, handler);
+                       r.HandleInstallSnapshotRequest(term, index, length, partSize, part, data, handler);
                    }
                    catch (Exception t)
                    {
@@ -237,7 +237,7 @@ namespace NRaftTest
             }
         }
 
-        public void sendIssueCommand(int peerId, Command command, ClientResponseHandler handler)
+        public void SendIssueCommand(int peerId, Command command, ClientResponseHandler handler)
         {
             if (rafts.TryGetValue(peerId, out var r))
             {
@@ -247,7 +247,7 @@ namespace NRaftTest
 
                     try
                    {
-                       r.handleClientRequest(command, handler);
+                       r.HandleClientRequest(command, handler);
                    }
                    catch (Exception t)
                    {

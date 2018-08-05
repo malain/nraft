@@ -23,15 +23,15 @@ namespace NRaft
             this.term = term;
         }
 
-        public void applyTo(object state) { }
+        public void ApplyTo(object state) { }
 
-        public void write(BinaryWriter writer)
+        public void Serialize(BinaryWriter writer)
         {
             writer.Write(term);
             writer.Write(peerId);
         }
 
-        public void read(BinaryReader reader, int fileVersion)
+        public void Deserialize(BinaryReader reader, int fileVersion)
         {
             term = reader.ReadInt64();
             peerId = reader.ReadInt32();

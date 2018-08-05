@@ -6,8 +6,8 @@ namespace NRaft
 
     public class PendingCommand : IComparable<PendingCommand> 
     {
-        public Entry entry;
-        public ClientResponseHandler handler;
+        public Entry entry { get; private set; }
+        public ClientResponseHandler handler { get; private set; }
 
         public PendingCommand(Entry entry, ClientResponseHandler handler)
         {

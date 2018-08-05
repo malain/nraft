@@ -31,23 +31,23 @@ namespace NRaft {
             term = reader.ReadInt64();
             index = reader.ReadInt64();
             var typeId = reader.ReadInt32();
-            command = log.makeCommandById(typeId);
+            command = log.CreateCommand(typeId);
             if (command == null)
             {
                 throw new IOException("Could not create command type " + typeId);
             }
-            command.read(reader, fileVersion);
+            command.Deserialize(reader, fileVersion);
         }
 
         /**
          * Writes this entry to an output stream
          */
-        public void write(BinaryWriter writer)
+        public void Serialize(BinaryWriter writer)
         {
             writer.Write(Term);
             writer.Write(Index);
             writer.Write(command.CommandId);
-            Command.write(writer);
+            Command.Serialize(writer);
         }
 
         public override string ToString()

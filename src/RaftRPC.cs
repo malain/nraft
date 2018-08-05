@@ -7,16 +7,16 @@ namespace NRaft
 
     public interface RaftRequests
     {
-        void handleVoteRequest(string clusterName, long term, int candidateId, long lastLogIndex, long lastLogTerm,
+        void HandleVoteRequest(string clusterName, long term, int candidateId, long lastLogIndex, long lastLogTerm,
              VoteResponseHandler handler);
 
-        void handleAppendEntriesRequest(long term, int leaderId, long prevLogIndex, long prevLogTerm, Entry[] entries,
+        void HandleAppendEntriesRequest(long term, int leaderId, long prevLogIndex, long prevLogTerm, Entry[] entries,
              long leaderCommit, AppendEntriesResponseHandler handler);
 
-        void handleInstallSnapshotRequest(long term, long index, long length, int partSize, int part, byte[] data,
+        void HandleInstallSnapshotRequest(long term, long index, long length, int partSize, int part, byte[] data,
              InstallSnapshotResponseHandler handler);
 
-        void handleClientRequest(Command command, ClientResponseHandler handler);
+        void HandleClientRequest(Command command, ClientResponseHandler handler);
     }
 
     /**
@@ -25,16 +25,16 @@ namespace NRaft
     public interface RaftRPC
     {
         ///////// Request Senders ///////// 
-        void sendRequestVote(string clusterName, int peerId, long term, int candidateId, long lastLogIndex, long lastLogTerm,
+        void SendRequestVote(string clusterName, int peerId, long term, int candidateId, long lastLogIndex, long lastLogTerm,
              VoteResponseHandler handler);
 
-        void sendAppendEntries(int peerId, long term, int leaderId, long prevLogIndex, long prevLogTerm, Entry[] entries,
+        void SendAppendEntries(int peerId, long term, int leaderId, long prevLogIndex, long prevLogTerm, Entry[] entries,
              long leaderCommit, AppendEntriesResponseHandler handler);
 
-        void sendInstallSnapshot(int peerId, long term, long index, long length, int partSize, int part, byte[] data,
+        void SendInstallSnapshot(int peerId, long term, long index, long length, int partSize, int part, byte[] data,
              InstallSnapshotResponseHandler handler);
 
-        void sendIssueCommand(int peerId, Command command, ClientResponseHandler handler);
+        void SendIssueCommand(int peerId, Command command, ClientResponseHandler handler);
     }
 
     ///////// Response Handlers ///////// 

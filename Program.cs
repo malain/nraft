@@ -24,7 +24,7 @@ namespace NRaftTest
         private static void Dump(RaftEngine node)
         {
             Console.WriteLine($"State machine for {node} ---------------");
-            node.getStateMachineManager<TestStateMachine>().Dump();
+            node.GetStateMachineManager<TestStateMachine>().Dump();
         }
 
         public static async Task TestSnapshots()
@@ -45,18 +45,18 @@ namespace NRaftTest
             // write a bunch of entries
             for (int i = 0; i < 100; i++)
             {
-                log.append(1, MakeNewCommand());
+                log.Append(1, MakeNewCommand());
             }
 
             // wait for commits to write 
-            log.setCommitIndex(log.getLastIndex());
-            while (log.getStateMachine().getIndex() < log.getLastIndex())
+            log.CommitIndex = log.LastIndex;
+            while (log.StateManager.Index < log.LastIndex)
             {
                 await Task.Delay(100);
             }
 
             var checksum = manager.getCheckSum();
-            log.stop();
+            log.Stop();
 
             // load new log from snapshot & files
             manager = new TestStateMachine();
@@ -64,8 +64,8 @@ namespace NRaftTest
                         log = new Log(config, state);
 
             Debug.Assert(checksum == manager.getCheckSum());
-            Debug.Assert(96 == log.getFirstIndex());
-            Debug.Assert(100 == log.getLastIndex());
+            Debug.Assert(96 == log.FirstIndex);
+            Debug.Assert(100 == log.LastIndex);
         }
 
         public static async Task TestLog()
@@ -86,38 +86,38 @@ namespace NRaftTest
             // write a bunch of entries
             for (int i = 0; i < 10; i++)
             {
-                log.append(1, MakeNewCommand());
+                log.Append(1, MakeNewCommand());
             }
 
-            Debug.Assert(1 == log.getFirstIndex());
-            Debug.Assert(10 == log.getLastIndex());
+            Debug.Assert(1 == log.FirstIndex);
+            Debug.Assert(10 == log.LastIndex);
 
             // test getting all of the entries by index and edges
-            Debug.Assert(log.getEntry(0) == null);
+            Debug.Assert(log.GetEntry(0) == null);
             for (int i = 1; i <= 10; i++)
             {
-                Entry e = log.getEntry(i);
+                Entry e = log.GetEntry(i);
                 Debug.Assert(e != null);
                 Debug.Assert(i == e.Index);
             }
-            Debug.Assert(log.getEntry(11) == null);
+            Debug.Assert(log.GetEntry(11) == null);
 
             // make sure we can append a higher term
-            Debug.Assert(log.append(new Entry(2, 11, MakeNewCommand())) == true);
-            Debug.Assert(log.getEntry(11) != null);
+            Debug.Assert(log.Append(new Entry(2, 11, MakeNewCommand())) == true);
+            Debug.Assert(log.GetEntry(11) != null);
 
             // make sure we cannot append a lower term
-            Debug.Assert(log.append(new Entry(1, 12, MakeNewCommand())) == false);
-            Debug.Assert(log.getEntry(12) == null);
+            Debug.Assert(log.Append(new Entry(1, 12, MakeNewCommand())) == false);
+            Debug.Assert(log.GetEntry(12) == null);
 
-            log.setCommitIndex(log.getLastIndex());
-            while (log.getStateMachine().getIndex() < log.getLastIndex())
+            log.CommitIndex = log.LastIndex;
+            while (log.StateManager.Index < log.LastIndex)
             {
                 await Task.Delay(100);
             }
             var checksum = manager.getCheckSum();
             //logger.info("State = {}", state);
-            log.stop();
+            log.Stop();
 
             await Task.Delay(1000);
 
@@ -126,11 +126,11 @@ namespace NRaftTest
             manager = new TestStateMachine();
             state = new StateManager(manager);      
                   log = new Log(config, state);
-            Debug.Assert(1 == log.getFirstIndex());
-            Debug.Assert(11 == log.getLastIndex());
+            Debug.Assert(1 == log.FirstIndex);
+            Debug.Assert(11 == log.LastIndex);
 
-            log.setCommitIndex(log.getLastIndex());
-            while (log.getStateMachine().getIndex() < log.getLastIndex())
+            log.CommitIndex = log.LastIndex;
+            while (log.StateManager.Index < log.LastIndex)
             {
                 await Task.Delay(100);
             }
@@ -140,10 +140,10 @@ namespace NRaftTest
             // write a bunch of entries
             for (int i = 0; i < 10; i++)
             {
-                log.append(3, MakeNewCommand());
+                log.Append(3, MakeNewCommand());
             }
-            Debug.Assert(1 == log.getFirstIndex());
-            Debug.Assert(21 == log.getLastIndex());
+            Debug.Assert(1 == log.FirstIndex);
+            Debug.Assert(21 == log.LastIndex);
         }
 
         private static TestCommand MakeNewCommand()
@@ -165,12 +165,12 @@ namespace NRaftTest
             {
                 Config cfg = new Config().setLogDir(logDirs[i - 1]).setClusterName("TEST");
                 RaftEngine raft = new RaftEngine(cfg, new TestStateMachine(), new RPC(rafts));
-                raft.setPeerId(i);
+                raft.SetPeerId(i);
                 for (int j = 1; j <= NUM_PEERS; j++)
                 {
                     if (j != i)
                     {
-                        raft.addPeer(j);
+                        raft.AddPeer(j);
                     }
                 }
                 Dump(raft);
@@ -181,7 +181,7 @@ namespace NRaftTest
             {
                 foreach (var raft in rafts.Values)
                 {
-                    raft.start(raft.getPeerId());
+                    raft.Start(raft.PeerId);
                     await Task.Delay(100);
                 }
 
@@ -191,14 +191,14 @@ namespace NRaftTest
                     await Task.Delay(1000 + rnd.Next(20) * 500);
                     foreach (var r in rafts.Values)
                     {
-                        r.executeCommand(MakeNewCommand(), null);
+                        r.ExecuteCommand(MakeNewCommand(), null);
                     }
                 }
             });
             Console.ReadKey();
             foreach (var r in rafts.Values)
             {
-                r.stop();
+                r.Stop();
                 Dump(r);
             }
         }
