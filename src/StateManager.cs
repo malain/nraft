@@ -245,7 +245,7 @@ namespace NRaft
             //Debug.Assert (this.index + 1 == entry.index) : (this.index + 1) + "!=" + entry.index;
             Debug.Assert(this.term <= entry.Term);
 
-            entry.InvokeApplyTo(this.StateMachine);
+            entry.InvokeApplyTo(this);
 
             this.index = entry.Index;
             this.term = entry.Term;

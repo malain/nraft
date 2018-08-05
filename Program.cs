@@ -37,7 +37,7 @@ namespace NRaftTest
 
             var manager = new TestStateMachine();
             var state =  new StateManager(manager);
-            Config config = new Config().WithLogDir(logDir);
+            Config config = new Config(1).WithLogDir(logDir);
             config.WithEntriesPerFile(16);
             config.WithEntriesPerSnapshot(32);
             var log = new Log(config, state);
@@ -78,7 +78,7 @@ namespace NRaftTest
 
             var manager = new TestStateMachine();
             var state = new StateManager(manager);
-            Config config = new Config().WithLogDir(logDir);
+            Config config = new Config(1).WithLogDir(logDir);
 
             // create a log
             var log = new Log(config, state);
@@ -163,9 +163,8 @@ namespace NRaftTest
 
             for (int i = 1; i <= NUM_PEERS; i++)
             {
-                Config cfg = new Config().WithLogDir(logDirs[i - 1]).WithClusterName("TEST");
+                Config cfg = new Config(i).WithLogDir(logDirs[i - 1]).WithClusterName("TEST");
                 RaftEngine raft = new RaftEngine(cfg, new TestStateMachine(), new RPC(rafts));
-                raft.SetPeerId(i);
                 for (int j = 1; j <= NUM_PEERS; j++)
                 {
                     if (j != i)
@@ -181,7 +180,7 @@ namespace NRaftTest
             {
                 foreach (var raft in rafts.Values)
                 {
-                    raft.Start(raft.PeerId);
+                    raft.Start();
                     await Task.Delay(100);
                 }
 
@@ -205,8 +204,10 @@ namespace NRaftTest
 
         public static void Main(string[] args)
         {
-            TestLog().GetAwaiter().GetResult();
-            TestSnapshots().GetAwaiter().GetResult();
+            TestCluster();
+
+            // TestLog().GetAwaiter().GetResult();
+            // TestSnapshots().GetAwaiter().GetResult();
             // CreateWebHostBuilder(args).Build().Run();
         }
 

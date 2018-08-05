@@ -21,44 +21,50 @@ namespace NRaft
           */
         public int ElectionTimeoutFixedMillis { get; private set; } = DEFAULT_ELECTION_TIMEOUT_FIXED_MILLIS;
         /**
- * Get the randomized timeout length in millis before we will call an election.
- */
+        * Get the randomized timeout length in millis before we will call an election.
+        */
         public int ElectionTimeoutRandomMillis { get; private set; } = DEFAULT_ELECTION_TIMEOUT_RANDOM_MILLIS;
         /**
-     * Get the heart beat interval. The leader will send a hear tbeat this often, even if there are no new entries.
-     */
+        * Get the heart beat interval. The leader will send a hear tbeat this often, even if there are no new entries.
+        */
         public int HeartbeatMillis { get; private set; } = DEFAULT_HEARTBEAT_MILLIS;
         /**
- * Get the maximum number of log entries per AppendEntries RPC
- */
+        * Get the maximum number of log entries per AppendEntries RPC
+        */
         public int MaxEntriesPerRequest { get; private set; } = DEFAULT_MAX_ENTRIES_PER_REQUEST;
         /**
- * Get the maximum bytes sent per InstallSnapshot RPC.
- */
+        * Get the maximum bytes sent per InstallSnapshot RPC.
+        */
         public int SnapshotPartSize { get; private set; } = DEFAULT_PART_SIZE;
         /**
-  * Get the number of log entries we will store per log file
-  */
+        * Get the number of log entries we will store per log file
+        */
         public int EntriesPerFile { get; private set; } = NUM_ENTRIES_PER_LOGFILE;
-
         /**
          * Get the number of log entries we will process between taking snapshots.
          */
         public int EntriesPerSnapshot { get; private set; } = NUM_ENTRIES_PER_SNAPSHOT;
         /**
- * Get if we delete old log files to recover disk space, or keep a permanent log of all entries.
- */
+        * Get if we delete old log files to recover disk space, or keep a permanent log of all entries.
+        */
         public bool DeleteOldFiles { get; private set; } = DELETE_OLD_FILES;
-
         /**
          * The directory where we will read and write raft data files
          */
         public string LogDirectory { get; private set; } = "raft-logs";
-
         /**
          * The name of our cluster which provides a fail-safe to prevent nodes from accidentally joining the wrong raft cluster.
          */
         public string ClusterName { get; private set; }
+        /*
+         * Current peer id 
+         */
+        public int PeerId { get; private set; }
+
+
+        public Config(int peerId) {
+            PeerId = peerId;
+        }
 
         /**
          * Set the fixed timeout length in millis before we will call an election.
@@ -89,7 +95,6 @@ namespace NRaft
             this.HeartbeatMillis = heartbeatMillis;
             return this;
         }
-
 
         /**
          * Set the maximum number of log entries per AppendEntries RPC. This should be tuned for your particular RPC implementation and typical

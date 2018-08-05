@@ -36,7 +36,7 @@ namespace NRaft
         private readonly Random random = new Random();
         private readonly Dictionary<int, PeerState> peers = new Dictionary<int, PeerState>();
         private readonly Queue<PendingCommand> pendingCommands = new Queue<PendingCommand>();
-        private readonly Log log;
+        internal readonly Log Log;
         private readonly RaftRPC rpc;
         private readonly Config config;
 
@@ -77,15 +77,15 @@ namespace NRaft
             this.config = config;
             var stateMachine = new StateManager(stateMachineManager);
             stateMachine.AddListener(OnLogEntryApplied);
-            this.log = new Log(config, stateMachine);
-            this.lastTermCommitted = this.currentTerm = log.LastTerm;
+            this.Log = new Log(config, stateMachine);
+            this.lastTermCommitted = this.currentTerm = Log.LastTerm;
+            SetPeerId(config.PeerId);
         }
 
-        public void Start(int peerId)
+        public void Start()
         {
             lock (this)
             {
-                SetPeerId(peerId);
                 this.role = Role.Follower;
                 RescheduleElection();
                 this.electionTimeout += 1000; // TODO add an initial grace period on startup
@@ -107,7 +107,7 @@ namespace NRaft
             lock (this)
             {
                 ClearAllPendingRequests();
-                log.Stop();
+                Log.Stop();
                 foreach (PeerState p in peers.Values)
                 {
                     logger.LogInformation($" - {p} has matchIndex {p.matchIndex}");
@@ -115,8 +115,8 @@ namespace NRaft
                     {
                         // be nice and send a update to all the peers with our  current commit index before we shutdown
                         long prevLogIndex = p.nextIndex - 1;
-                        long prevLogTerm = log.GetTerm(prevLogIndex);
-                        rpc.SendAppendEntries(p.peerId, currentTerm, myPeerId, prevLogIndex, prevLogTerm, null, log.CommitIndex, null);
+                        long prevLogTerm = Log.GetTerm(prevLogIndex);
+                        rpc.SendAppendEntries(p.peerId, currentTerm, myPeerId, prevLogIndex, prevLogTerm, null, Log.CommitIndex, null);
                     }
                 }
                 role = Role.Leaving;
@@ -218,9 +218,10 @@ namespace NRaft
         {
             lock (this)
             {
-                if (!log.IsRunning && role != Role.Leaving)
+                if (!Log.IsRunning && role != Role.Leaving)
                 {
                     role = Role.Failed;
+                    logger.LogError($"{this} failed.");
                 }
                 switch (role)
                 {
@@ -279,17 +280,17 @@ namespace NRaft
                 if (IsCommittable(firstIndexOfTerm))
                 {
                     // we can commit any entry a majority of peers have replicated
-                    long index = log.LastIndex;
+                    long index = Log.LastIndex;
                     foreach (PeerState peer in peers.Values)
                     {
                         index = Math.Min(index, peer.matchIndex);
                     }
-                    index = Math.Max(index, log.CommitIndex);
-                    while (index <= log.LastIndex && IsCommittable(index))
+                    index = Math.Max(index, Log.CommitIndex);
+                    while (index <= Log.LastIndex && IsCommittable(index))
                     {
 
                         // Logging for PT #102932910
-                        var e = log.GetEntry(index);
+                        var e = Log.GetEntry(index);
                         if (e != null && lastTermCommitted != e.Term)
                         {
                             logger.LogInformation($"Committed new term {e.Term}");
@@ -300,7 +301,7 @@ namespace NRaft
                             }
                             lastTermCommitted = e.Term;
                         }
-                        log.CommitIndex = index;
+                        Log.CommitIndex = index;
                         index++;
                     }
                 }
@@ -312,7 +313,7 @@ namespace NRaft
             lock (this)
             {
                 role = Role.Candidate;
-                log.UpdateStateMachine();
+                Log.UpdateStateMachine();
 
                 if (role == Role.Leaving)
                 {
@@ -332,7 +333,7 @@ namespace NRaft
                     {
                         peer.nextIndex = 1;
                         peer.matchIndex = 0;
-                        rpc.SendRequestVote(config.ClusterName, peer.peerId, currentTerm, myPeerId, log.LastIndex, log.LastTerm,
+                        rpc.SendRequestVote(config.ClusterName, peer.peerId, currentTerm, myPeerId, Log.LastIndex, Log.LastTerm,
                               (term, voteGranted) =>
                               {
                                   lock (this)
@@ -377,8 +378,8 @@ namespace NRaft
                 {
                     StepDown(term);
                 }
-                if (term >= currentTerm && (votedFor == 0 || votedFor == candidateId) && lastLogIndex >= log.LastIndex
-                      && lastLogTerm >= log.LastTerm)
+                if (term >= currentTerm && (votedFor == 0 || votedFor == candidateId) && lastLogIndex >= Log.LastIndex
+                      && lastLogTerm >= Log.LastTerm)
                 {
                     votedFor = candidateId;
                     RescheduleElection();
@@ -423,11 +424,11 @@ namespace NRaft
                 logger.LogInformation($"{this} is becoming the leader (term {currentTerm})");
                 role = Role.Leader;
                 leaderId = myPeerId;
-                firstIndexOfTerm = log.LastIndex + 1;
+                firstIndexOfTerm = Log.LastIndex + 1;
                 foreach (PeerState peer in peers.Values)
                 {
                     peer.matchIndex = 0;
-                    peer.nextIndex = log.LastIndex + 1;
+                    peer.nextIndex = Log.LastIndex + 1;
                     peer.appendPending = false;
                     peer.snapshotTransfer = null;
                     peer.fresh = true;
@@ -465,17 +466,17 @@ namespace NRaft
                 {
                     peer.appendPending = false; // time out the last append
                 }
-                if (!peer.appendPending && (peer.nextIndex < log.LastIndex || now > peer.lastAppendMillis + config.HeartbeatMillis))
+                if (!peer.appendPending && (peer.nextIndex < Log.LastIndex || now > peer.lastAppendMillis + config.HeartbeatMillis))
                 {
                     Debug.Assert(peer.nextIndex > 0);
 
                     // for a fresh peer we'll start with an empty list of entries so we can learn what index the node is already on in it's log
                     // fetch entries from log to send to the peer
                     Entry[] entries = (!peer.fresh && peer.snapshotTransfer == null)
-                      ? log.GetEntries(peer.nextIndex, config.MaxEntriesPerRequest) : null;
+                      ? Log.GetEntries(peer.nextIndex, config.MaxEntriesPerRequest) : null;
 
                     // if this peer needs entries we no longer have, then send them a snapshot
-                    if (!peer.fresh && peer.nextIndex > 0 && peer.nextIndex < log.FirstIndex && entries == null)
+                    if (!peer.fresh && peer.nextIndex > 0 && peer.nextIndex < Log.FirstIndex && entries == null)
                     {
                         logger.LogInformation($"{this} peer {peer.peerId} needs a snapshot");
                         InstallSnapshot(peer);
@@ -483,13 +484,13 @@ namespace NRaft
                     else
                     {
                         long prevLogIndex = peer.nextIndex - 1;
-                        long prevLogTerm = log.GetTerm(prevLogIndex);
+                        long prevLogTerm = Log.GetTerm(prevLogIndex);
 
                         // debugging a weird situation:
-                        if ((entries == null || entries.Length == 0) && peer.nextIndex < log.CommitIndex)
+                        if ((entries == null || entries.Length == 0) && peer.nextIndex < Log.CommitIndex)
                         {
-                            logger.LogWarning($"Empty entries for peer {peer} (fresh={peer.fresh},snap={peer.snapshotTransfer}): peerIndex={peer.nextIndex}, firstIndex={log.FirstIndex}, lastIndex={log.LastIndex} : {entries}");
-                            var e = log.GetEntry(peer.nextIndex);
+                            logger.LogWarning($"Empty entries for peer {peer} (fresh={peer.fresh},snap={peer.snapshotTransfer}): peerIndex={peer.nextIndex}, firstIndex={Log.FirstIndex}, lastIndex={Log.LastIndex} : {entries}");
+                            var e = Log.GetEntry(peer.nextIndex);
                             logger.LogWarning($"{peer.nextIndex} = {e}");
                         }
 
@@ -497,7 +498,7 @@ namespace NRaft
                         peer.lastAppendMillis = now;
                         peer.appendPending = true;
                         peer.snapshotTransfer = null;
-                        rpc.SendAppendEntries(peer.peerId, currentTerm, myPeerId, prevLogIndex, prevLogTerm, entries, log.CommitIndex,
+                        rpc.SendAppendEntries(peer.peerId, currentTerm, myPeerId, prevLogIndex, prevLogTerm, entries, Log.CommitIndex,
                               (term, success, lastLogIndex) =>
                               {
                                   lock (this)
@@ -543,12 +544,12 @@ namespace NRaft
             }
         }
 
-        public void HandleAppendEntriesRequest(long term, int leaderId, long prevLogIndex, long prevLogTerm, Entry[] entries,
+        public void HandleAppendEntriesRequest(long term, int leaderId, long prevLogIndex, long prevLogTerm, IEnumerable<Entry> entries,
              long leaderCommit, AppendEntriesResponseHandler handler)
         {
             lock (this)
             {
-                if (!log.IsRunning)
+                if (!Log.IsRunning)
                 {
                     return;
                 }
@@ -567,37 +568,37 @@ namespace NRaft
                     if(!rescheduled)
                         RescheduleElection();
 
-                    if (log.IsConsistentWith(prevLogIndex, prevLogTerm))
+                    if (Log.IsConsistentWith(prevLogIndex, prevLogTerm))
                     {
                         if (entries != null)
                         {
                             foreach (Entry e in entries)
                             {
-                                if (!log.Append(e))
+                                if (!Log.Append(e))
                                 {
                                     logger.LogWarning($"{this} is failing append entries from {leaderId}: {e}");
-                                    handler(currentTerm, false, log.LastIndex);
+                                    handler(currentTerm, false, Log.LastIndex);
                                     return;
                                 }
                             }
                         }
 
-                        log.CommitIndex = Math.Min(leaderCommit, log.LastIndex);
+                        Log.CommitIndex = Math.Min(leaderCommit, Log.LastIndex);
 
                         logger.LogTrace($"{this} is fine with append entries from {leaderId}");
-                        handler(currentTerm, true, log.LastIndex);
+                        handler(currentTerm, true, Log.LastIndex);
                         return;
                     }
                     else
                     {
                         logger.LogWarning($"{this} is failing with inconsistent append entries from {leaderId}");
                         logger.LogWarning($"Leader prevLogTerm={prevLogTerm}, prevLogIndex={prevLogIndex}");
-                        logger.LogWarning($"Follower firstTerm={log.FirstTerm}, firstIndex={log.FirstIndex}");
-                        logger.LogWarning($"Follower lastTerm={log.LastTerm}, lastIndex={log.LastIndex}");
+                        logger.LogWarning($"Follower firstTerm={Log.FirstTerm}, firstIndex={Log.FirstIndex}");
+                        logger.LogWarning($"Follower lastTerm={Log.LastTerm}, lastIndex={Log.LastIndex}");
 
-                        if (prevLogIndex > log.CommitIndex)
+                        if (prevLogIndex > Log.CommitIndex)
                         {
-                            log.WipeConflictedEntries(prevLogIndex);
+                            Log.WipeConflictedEntries(prevLogIndex);
                         }
                         else
                         {
@@ -608,7 +609,7 @@ namespace NRaft
                 }
 
                 logger.LogTrace($"{this} is rejecting append entries from {leaderId}");
-                handler(currentTerm, false, log.LastIndex);
+                handler(currentTerm, false, Log.LastIndex);
             }
         }
 
@@ -619,7 +620,7 @@ namespace NRaft
 
                 if (peer.snapshotTransfer == null)
                 {
-                    peer.snapshotTransfer = Path.Combine(log.LogDirectoryName, "raft.snapshot");
+                    peer.snapshotTransfer = Path.Combine(Log.LogDirectoryName, "raft.snapshot");
                     InstallSnapshot(peer, 0);
                 }
             }
@@ -682,7 +683,7 @@ namespace NRaft
             logger.LogInformation($"handleInstallSnapshot: length={length} part={part}");
             RescheduleElection();
 
-            var file = new FileInfo(Path.Combine(log.LogDirectoryName, "raft.installing.snapshot"));
+            var file = new FileInfo(Path.Combine(Log.LogDirectoryName, "raft.installing.snapshot"));
             if (file.Exists && part == 0)
             {
                 file.Delete();
@@ -703,8 +704,8 @@ namespace NRaft
 
                                 if (stream.Length == length)
                                 {
-                                    File.Move(file.FullName, Path.Combine(log.LogDirectoryName, "raft.snapshot"));
-                                    log.LoadSnapshot();
+                                    File.Move(file.FullName, Path.Combine(Log.LogDirectoryName, "raft.snapshot"));
+                                    Log.LoadSnapshot();
                                     RescheduleElection();
                                 }
 
@@ -737,7 +738,7 @@ namespace NRaft
                 if (role == Role.Leader)
                 {
                     logger.LogInformation($"{this} is executing a command");
-                    Entry e = log.Append(currentTerm, command);
+                    Entry e = Log.Append(currentTerm, command);
                     if (e != null)
                     {
                         if (handler != null)
@@ -760,7 +761,7 @@ namespace NRaft
 
         public void ExecuteAfterCommandProcessed(Entry e, ClientResponseHandler handler)
         {
-            if (e.Index <= log.StateMachineIndex)
+            if (e.Index <= Log.StateMachineIndex)
             {
                 handler(e);
             }
@@ -785,7 +786,7 @@ namespace NRaft
                 {
                     //  logger.LogInformation("Updating All Pending Requests {} > {} ", pendingCommands.Count, log.getCommitIndex());
                     PendingCommand item = pendingCommands.Dequeue();
-                    if (item.entry.Index <= log.StateMachineIndex)
+                    if (item.entry.Index <= Log.StateMachineIndex)
                     {
                         logger.LogDebug($"Returning Pending Command Response To Client {item.entry}");
                         item.handler(item.entry);
