@@ -9,22 +9,24 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
+using NRaft;
 
-namespace NRaft
+namespace NRaftTest
 {
     public class Program
     {
         private static int NUM_PEERS = 3;
-        private static Dictionary<int, RaftEngine<TestStateMachine>> rafts = new Dictionary<int, RaftEngine<TestStateMachine>>();
+        private static Dictionary<int, RaftEngine> rafts = new Dictionary<int, RaftEngine>();
         private static string[] logDirs = new string[NUM_PEERS];
         private static Random rnd = new Random();
         private static string keys = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-        private static void Dump(RaftEngine<TestStateMachine> node)
+        private static void Dump(RaftEngine node)
         {
             Console.WriteLine($"State machine for {node} ---------------");
-            node.getStateMachine().Dump();
+            node.getStateMachineManager<TestStateMachine>().Dump();
         }
+
         public static async Task TestSnapshots()
         {
             var logDir = "logs/snapshot";
@@ -33,11 +35,12 @@ namespace NRaft
                 Directory.Delete(logDir, true);
             Directory.CreateDirectory(logDir);
 
-            TestStateMachine state = new TestStateMachine();
+            var manager = new TestStateMachine();
+            var state =  new StateManager(manager);
             Config config = new Config().setLogDir(logDir);
             config.setEntriesPerFile(16);
             config.setEntriesPerSnapshot(32);
-            var log = new Log<TestStateMachine>(config, state);
+            var log = new Log(config, state);
 
             // write a bunch of entries
             for (int i = 0; i < 100; i++)
@@ -52,18 +55,19 @@ namespace NRaft
                 await Task.Delay(100);
             }
 
-            var checksum = state.getCheckSum();
+            var checksum = manager.getCheckSum();
             log.stop();
 
             // load new log from snapshot & files
-            state = new TestStateMachine();
-            log = new Log<TestStateMachine>(config, state);
+            manager = new TestStateMachine();
+            state = new StateManager(manager);
+                        log = new Log(config, state);
 
-            Debug.Assert(checksum == state.getCheckSum());
+            Debug.Assert(checksum == manager.getCheckSum());
             Debug.Assert(96 == log.getFirstIndex());
             Debug.Assert(100 == log.getLastIndex());
         }
-        
+
         public static async Task TestLog()
         {
             var logDir = "logs/logs";
@@ -71,12 +75,13 @@ namespace NRaft
             if (Directory.Exists(logDir))
                 Directory.Delete(logDir, true);
             Directory.CreateDirectory(logDir);
-            
-            TestStateMachine state = new TestStateMachine();
+
+            var manager = new TestStateMachine();
+            var state = new StateManager(manager);
             Config config = new Config().setLogDir(logDir);
 
             // create a log
-            var log = new Log<TestStateMachine>(config, state);
+            var log = new Log(config, state);
 
             // write a bunch of entries
             for (int i = 0; i < 10; i++)
@@ -91,18 +96,18 @@ namespace NRaft
             Debug.Assert(log.getEntry(0) == null);
             for (int i = 1; i <= 10; i++)
             {
-                Entry<TestStateMachine> e = log.getEntry(i);
+                Entry e = log.getEntry(i);
                 Debug.Assert(e != null);
-                Debug.Assert(i == e.index);
+                Debug.Assert(i == e.Index);
             }
             Debug.Assert(log.getEntry(11) == null);
 
             // make sure we can append a higher term
-            Debug.Assert(log.append(new Entry<TestStateMachine>(2, 11, MakeNewCommand())) == true);
+            Debug.Assert(log.append(new Entry(2, 11, MakeNewCommand())) == true);
             Debug.Assert(log.getEntry(11) != null);
 
             // make sure we cannot append a lower term
-            Debug.Assert(log.append(new Entry<TestStateMachine>(1, 12, MakeNewCommand())) == false);
+            Debug.Assert(log.append(new Entry(1, 12, MakeNewCommand())) == false);
             Debug.Assert(log.getEntry(12) == null);
 
             log.setCommitIndex(log.getLastIndex());
@@ -110,7 +115,7 @@ namespace NRaft
             {
                 await Task.Delay(100);
             }
-            var checksum = state.getCheckSum();
+            var checksum = manager.getCheckSum();
             //logger.info("State = {}", state);
             log.stop();
 
@@ -118,8 +123,9 @@ namespace NRaft
 
             // create a new log
 
-            state = new TestStateMachine();
-            log = new Log<TestStateMachine>(config, state);
+            manager = new TestStateMachine();
+            state = new StateManager(manager);      
+                  log = new Log(config, state);
             Debug.Assert(1 == log.getFirstIndex());
             Debug.Assert(11 == log.getLastIndex());
 
@@ -128,7 +134,7 @@ namespace NRaft
             {
                 await Task.Delay(100);
             }
-            Debug.Assert(checksum == state.getCheckSum());
+            Debug.Assert(checksum == manager.getCheckSum());
             // logger.info("State = {}", state);
 
             // write a bunch of entries
@@ -158,7 +164,7 @@ namespace NRaft
             for (int i = 1; i <= NUM_PEERS; i++)
             {
                 Config cfg = new Config().setLogDir(logDirs[i - 1]).setClusterName("TEST");
-                RaftEngine<TestStateMachine> raft = new RaftEngine<TestStateMachine>(cfg, new TestStateMachine(), new RPC(rafts));
+                RaftEngine raft = new RaftEngine(cfg, new TestStateMachine(), new RPC(rafts));
                 raft.setPeerId(i);
                 for (int j = 1; j <= NUM_PEERS; j++)
                 {
@@ -200,7 +206,7 @@ namespace NRaft
         public static void Main(string[] args)
         {
             TestLog().GetAwaiter().GetResult();
-
+            TestSnapshots().GetAwaiter().GetResult();
             // CreateWebHostBuilder(args).Build().Run();
         }
 

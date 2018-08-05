@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 
 namespace NRaft {
-    internal class LRUCache<T> where T : StateMachine<T>
+    internal class LRUCache
     {
         private Dictionary<string, Node> values = new Dictionary<string, Node>();
         private Node first;
@@ -12,10 +12,10 @@ namespace NRaft {
         class Node {
             public string Key;
             public Node Next;
-            public List<Entry<T>> Value;
+            public List<Entry> Value;
         }
 
-        internal List<Entry<T>> Get(string file)
+        internal List<Entry> Get(string file)
         {
             values.TryGetValue(file, out Node val);
             return val?.Value;
@@ -26,7 +26,7 @@ namespace NRaft {
             values.Clear();
         }
 
-        internal void Add(string file, List<Entry<T>> list)
+        internal void Add(string file, List<Entry> list)
         {
             lock (values)
             {

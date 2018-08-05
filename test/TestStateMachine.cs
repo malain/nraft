@@ -2,20 +2,18 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
+using NRaft;
 
-namespace NRaft
+namespace NRaftTest
 {
-    public class TestStateMachine : StateMachine<TestStateMachine>
+    public class TestStateMachine : IStateMachine
     {
         private Dictionary<string, string> values = new Dictionary<string, string>();
 
-        public TestStateMachine() : base()
+        public void Dump()
         {
-            registerCommand(TestCommand.COMMAND_ID, () => new TestCommand());
-        }
-
-        public void Dump() {
-            foreach(var kv in values) {
+            foreach (var kv in values)
+            {
                 Console.WriteLine($"{kv.Key}={kv.Value}");
             }
         }
@@ -24,18 +22,19 @@ namespace NRaft
             values[key] = value;
         }
 
-        public override void loadState(BinaryReader reader)
+        public void loadState(BinaryReader reader)
         {
             values = new Dictionary<string, string>();
             var count = reader.ReadInt32();
-            for (var i = 0; i < count;i++) {
+            for (var i = 0; i < count; i++)
+            {
                 var k = reader.ReadString();
                 var v = reader.ReadString();
                 values.Add(k, v);
             }
         }
 
-        public override void saveState(BinaryWriter writer)
+        public void saveState(BinaryWriter writer)
         {
             writer.Write(values.Count);
             foreach (var kv in values)
@@ -54,6 +53,11 @@ namespace NRaft
                 CRC32.Compute(cx, System.Text.Encoding.Default.GetBytes(kv.Value));
             }
             return cx;
+        }
+
+        public void registerCommand(ICommandManager manager)
+        {
+            manager.registerCommand<TestCommand>();
         }
     }
 
@@ -114,34 +118,32 @@ namespace NRaft
         public static uint Compute(uint crc, byte[] buf)
         {
             crc = crc ^ ~0U; //0xFFFFFFFF
-            for (var i = 0; i < buf.Length;i++)
+            for (var i = 0; i < buf.Length; i++)
                 crc = crc32_tab[(crc ^ buf[i]) & 0xFF] ^ (crc >> 8);
 
             return crc ^ ~0U; //0xFFFFFFFF
         }
     }
 
-    public class TestCommand : Command<TestStateMachine>
+    public class TestCommand : Command
     {
-        internal static readonly int COMMAND_ID = 1000;
+        public int CommandId => 1000;
+
         private string _key;
         private string _value;
 
-        public TestCommand(string key = null, string value = null)
+        public TestCommand() { }
+
+        public TestCommand(string key, string value)
         {
             _key = key;
             _value = value;
         }
 
-        public void applyTo(TestStateMachine state)
+        public void applyTo(object state)
         {
             Console.WriteLine($">>>>>>> Update key {_key} with {_value}");
-            state.AddValue(_key, _value);
-        }
-
-        public int getCommandType()
-        {
-            return COMMAND_ID;
+            ((TestStateMachine)state).AddValue(_key, _value);
         }
 
         public void read(BinaryReader reader, int fileVersion)
@@ -157,12 +159,13 @@ namespace NRaft
         }
     }
 
-    public class RPC : RaftRPC<TestStateMachine>
+    public class RPC : RaftRPC
     {
-        private Dictionary<int, RaftEngine<TestStateMachine>> rafts;
+        private Dictionary<int, RaftEngine> rafts;
         private static Random rnd = new Random();
 
-        public RPC(Dictionary<int, RaftEngine<TestStateMachine>> rafts) {
+        public RPC(Dictionary<int, RaftEngine> rafts)
+        {
             this.rafts = rafts;
         }
         public static int randomDelay()
@@ -170,13 +173,14 @@ namespace NRaft
             return 100 + rnd.Next(10) * 200;
         }
 
-        public void sendRequestVote( string clusterName, int peerId,  long term,  int candidateId,  long lastLogIndex,
-          long lastLogTerm,  VoteResponseHandler handler)
+        public void sendRequestVote(string clusterName, int peerId, long term, int candidateId, long lastLogIndex,
+          long lastLogTerm, VoteResponseHandler handler)
         {
-            if(rafts.TryGetValue(peerId, out var r))
+            if (rafts.TryGetValue(peerId, out var r))
             {
-                Task.Run( ()=> {
-                  //  await Task.Delay(randomDelay());
+                Task.Run(() =>
+                {
+                    //  await Task.Delay(randomDelay());
 
                     try
                     {
@@ -184,72 +188,72 @@ namespace NRaft
                     }
                     catch (Exception t)
                     {
-                       // logger.error(t.getMessage(), t);
+                        // logger.error(t.getMessage(), t);
                     }
 
                 });
             }
         }
 
-   public void sendAppendEntries(int peerId,  long term,  int leaderId,  long prevLogIndex,  long prevLogTerm,
-          Entry<TestStateMachine>[] entries,  long leaderCommit,  AppendEntriesResponseHandler handler)
+        public void sendAppendEntries(int peerId, long term, int leaderId, long prevLogIndex, long prevLogTerm,
+               Entry[] entries, long leaderCommit, AppendEntriesResponseHandler handler)
         {
             if (rafts.TryGetValue(peerId, out var r))
             {
-                Task.Run( () =>
-                {
-                //    await Task.Delay(randomDelay());
+                Task.Run(() =>
+               {
+                    //    await Task.Delay(randomDelay());
 
                     try
-                    {
-                        r.handleAppendEntriesRequest(term, leaderId, prevLogIndex, prevLogTerm, entries, leaderCommit, handler);
+                   {
+                       r.handleAppendEntriesRequest(term, leaderId, prevLogIndex, prevLogTerm, entries, leaderCommit, handler);
+                   }
+                   catch (Exception t)
+                   {
+                        // logger.error(t.getMessage(), t);
                     }
-                    catch (Exception t)
-                    {
-                       // logger.error(t.getMessage(), t);
-                    }
-                });
+               });
             }
         }
 
-   public void sendInstallSnapshot(int peerId,  long term,  long index,  long length,  int partSize,  int part,
-          byte[] data,  InstallSnapshotResponseHandler handler)
+        public void sendInstallSnapshot(int peerId, long term, long index, long length, int partSize, int part,
+               byte[] data, InstallSnapshotResponseHandler handler)
         {
             if (rafts.TryGetValue(peerId, out var r))
             {
-                Task.Run( () =>
-                {
-                  //  await Task.Delay(randomDelay());
+                Task.Run(() =>
+               {
+                    //  await Task.Delay(randomDelay());
 
                     try
-                    {
-                        r.handleInstallSnapshotRequest(term, index, length, partSize, part, data, handler);
-                    }
-                    catch (Exception t)
-                    {
+                   {
+                       r.handleInstallSnapshotRequest(term, index, length, partSize, part, data, handler);
+                   }
+                   catch (Exception t)
+                   {
                         //logger.error(t.getMessage(), t);
                     }
-                });
+               });
             }
         }
 
-   public void sendIssueCommand(int peerId,  Command<TestStateMachine> command,  ClientResponseHandler<TestStateMachine> handler)
+        public void sendIssueCommand(int peerId, Command command, ClientResponseHandler handler)
         {
             if (rafts.TryGetValue(peerId, out var r))
             {
-                Task.Run( () =>
-                {
-                 //   await Task.Delay(randomDelay());
+                Task.Run(() =>
+               {
+                    //   await Task.Delay(randomDelay());
 
                     try
-                    {
-                        r.handleClientRequest(command, handler);
+                   {
+                       r.handleClientRequest(command, handler);
+                   }
+                   catch (Exception t)
+                   {
+                        // logger.error(t.getMessage(), t);
                     }
-                    catch (Exception t)
-                    {
-                       // logger.error(t.getMessage(), t);
-                    }
-                });
+               });
             }
         }
     }

@@ -4,21 +4,21 @@ using System.IO;
 namespace NRaft
 {
 
-    public class PendingCommand<T> : IComparable<PendingCommand<T>> 
+    public class PendingCommand : IComparable<PendingCommand> 
     {
-        public Entry<T> entry;
-        public ClientResponseHandler<T> handler;
+        public Entry entry;
+        public ClientResponseHandler handler;
 
-        public PendingCommand(Entry<T> entry, ClientResponseHandler<T> handler)
+        public PendingCommand(Entry entry, ClientResponseHandler handler)
         {
             this.entry = entry;
             this.handler = handler;
         }
 
-        public int CompareTo(PendingCommand<T> other)
+        public int CompareTo(PendingCommand other)
         {
-            var index = entry.index;
-            return (int)(index - other.entry.index);
+            var index = entry.Index;
+            return (int)(index - other.entry.Index);
         }
     }
 }

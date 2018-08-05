@@ -5,9 +5,9 @@ namespace NRaft
 {
 
 
-    public class HealthCheckCommand : Command<IStateMachine>
+    public class HealthCheckCommand : Command
     {
-        public static readonly int COMMAND_ID = StateMachine.COMMAND_ID_HEALTH_CHECK;
+        public int CommandId => StateManager.COMMAND_ID_HEALTH_CHECK;
 
         private static Random random = new Random();
 
@@ -19,18 +19,13 @@ namespace NRaft
             val = random.Next();
         }
 
-        public void applyTo(IStateMachine state)
+        public void applyTo(object state)
         {
-            state.applyHealthCheck(val);
+            ((StateManager)state).applyHealthCheck(val);
         }
 
         public void write(BinaryWriter writer) { writer.Write(val); }
 
         public void read(BinaryReader reader, int fileVersion) { this.val = reader.ReadInt64(); }
-
-        public int getCommandType()
-        {
-            return COMMAND_ID;
-        }
     }
 }

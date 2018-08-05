@@ -17,10 +17,10 @@ namespace NRaft
      * </ul>
      */
 
-    public class RaftEngine<T> : RaftRequests<T> where T : StateMachine<T>
+    public class RaftEngine : RaftRequests 
     {
 
-        public static readonly ILogger logger = LoggerFactory.GetLogger<RaftEngine<T>>();
+        public static readonly ILogger logger = LoggerFactory.GetLogger<RaftEngine>();
 
         /**
          * These are the major raft roles we can be in
@@ -34,9 +34,9 @@ namespace NRaft
 
         private readonly Random random = new Random();
         private readonly Dictionary<int, PeerState> peers = new Dictionary<int, PeerState>();
-        private readonly Queue<PendingCommand<T>> pendingCommands = new Queue<PendingCommand<T>>();
-        private readonly Log<T> log;
-        private readonly RaftRPC<T> rpc;
+        private readonly Queue<PendingCommand> pendingCommands = new Queue<PendingCommand>();
+        private readonly Log log;
+        private readonly RaftRPC rpc;
         private readonly Config config;
 
         private Role role = Role.Joining;
@@ -47,7 +47,7 @@ namespace NRaft
         private long electionTimeout;
         private long firstIndexOfTerm;
         private long lastTermCommitted = 0;
-
+        private IStateMachine stateMachineManager;
         public class PeerState
         {
             public readonly int peerId;
@@ -69,12 +69,14 @@ namespace NRaft
             }
         }
 
-        public RaftEngine(Config config, T stateMachine, RaftRPC<T> rpc)
+        public RaftEngine(Config config, IStateMachine stateMachineManager, RaftRPC rpc)
         {
+            this.stateMachineManager = stateMachineManager;
             this.rpc = rpc;
             this.config = config;
+            var stateMachine = new StateManager(stateMachineManager);
             stateMachine.addListener(onLogEntryApplied);
-            this.log = new Log<T>(config, stateMachine);
+            this.log = new Log(config, stateMachine);
             this.lastTermCommitted = this.currentTerm = log.getLastTerm();
         }
 
@@ -126,11 +128,11 @@ namespace NRaft
             return $"Raft[{myPeerId}] {role} (Leader is {leaderId}) ";
         }
 
-        public T getStateMachine()
+        public T getStateMachineManager<T>() where T: IStateMachine
         {
             lock (this)
             {
-                return log.getStateMachine();
+                return (T)stateMachineManager;
             }
         }
 
@@ -170,11 +172,6 @@ namespace NRaft
             {
                 return currentTerm;
             }
-        }
-
-        public Log<T> getLog()
-        {
-            return log;
         }
 
         public int getLeader()
@@ -297,15 +294,15 @@ namespace NRaft
 
                         // Logging for PT #102932910
                         var e = log.getEntry(index);
-                        if (e != null && lastTermCommitted != e.term)
+                        if (e != null && lastTermCommitted != e.Term)
                         {
-                            logger.LogInformation($"Committed new term {e.term}");
+                            logger.LogInformation($"Committed new term {e.Term}");
                             foreach (var kv in peers)
                             {
                                 var p = kv.Value;
                                 logger.LogInformation($" - {p} has matchIndex {p.matchIndex} >= {firstIndexOfTerm} ({p.matchIndex >= firstIndexOfTerm})");
                             }
-                            lastTermCommitted = e.term;
+                            lastTermCommitted = e.Term;
                         }
                         log.setCommitIndex(index);
                         index++;
@@ -445,7 +442,7 @@ namespace NRaft
                 // Force a new term command to mark the occasion and hasten
                 // commitment of any older entries in our log from the 
                 // previous term
-                executeCommand(new NewTermCommand<T>(myPeerId, currentTerm), null);
+                executeCommand(new NewTermCommand(myPeerId, currentTerm), null);
 
                 updatePeers();
             }
@@ -479,7 +476,7 @@ namespace NRaft
 
                     // for a fresh peer we'll start with an empty list of entries so we can learn what index the node is already on in it's log
                     // fetch entries from log to send to the peer
-                    Entry<T>[] entries = (!peer.fresh && peer.snapshotTransfer == null)
+                    Entry[] entries = (!peer.fresh && peer.snapshotTransfer == null)
                       ? log.getEntries(peer.nextIndex, config.getMaxEntriesPerRequest()) : null;
 
                     // if this peer needs entries we no longer have, then send them a snapshot
@@ -520,7 +517,7 @@ namespace NRaft
                                               {
                                                   if (entries != null)
                                                   {
-                                                      peer.matchIndex = entries[entries.Length - 1].index;
+                                                      peer.matchIndex = entries[entries.Length - 1].Index;
                                                       peer.nextIndex = peer.matchIndex + 1;
                                                       Debug.Assert(peer.nextIndex != 0);
                                                   }
@@ -551,7 +548,7 @@ namespace NRaft
             }
         }
 
-        public void handleAppendEntriesRequest(long term, int leaderId, long prevLogIndex, long prevLogTerm, Entry<T>[] entries,
+        public void handleAppendEntriesRequest(long term, int leaderId, long prevLogIndex, long prevLogTerm, Entry[] entries,
              long leaderCommit, AppendEntriesResponseHandler handler)
         {
             lock (this)
@@ -579,7 +576,7 @@ namespace NRaft
                     {
                         if (entries != null)
                         {
-                            foreach (Entry<T> e in entries)
+                            foreach (Entry e in entries)
                             {
                                 if (!log.append(e))
                                 {
@@ -645,7 +642,7 @@ namespace NRaft
                 if (peer.snapshotTransfer != null)
                 {
                     logger.LogInformation($"Installing Snapshot to {peer} Part #{part}");
-                    long snapshotIndex = StateMachine.getSnapshotIndex(peer.snapshotTransfer);
+                    long snapshotIndex = StateManager.getSnapshotIndex(peer.snapshotTransfer);
                     if (snapshotIndex > 0)
                     {
                         int partSize = config.getSnapshotPartSize();
@@ -731,7 +728,7 @@ namespace NRaft
             handler(false);
         }
 
-        public void handleClientRequest(Command<T> command, ClientResponseHandler<T> handler)
+        public void handleClientRequest(Command command, ClientResponseHandler handler)
         {
             lock (this)
             {
@@ -739,21 +736,21 @@ namespace NRaft
             }
         }
 
-        public bool executeCommand(Command<T> command, ClientResponseHandler<T> handler = null)
+        public bool executeCommand(Command command, ClientResponseHandler handler = null)
         {
             lock (this)
             {
                 if (role == Role.Leader)
                 {
                     logger.LogInformation($"{this} is executing a command");
-                    Entry<T> e = log.append(currentTerm, command);
+                    Entry e = log.append(currentTerm, command);
                     if (e != null)
                     {
                         if (handler != null)
                         {
                             lock (pendingCommands)
                             {
-                                pendingCommands.Enqueue(new PendingCommand<T>(e, handler));
+                                pendingCommands.Enqueue(new PendingCommand(e, handler));
                             }
                         }
                         return true;
@@ -767,9 +764,9 @@ namespace NRaft
             }
         }
 
-        public void executeAfterCommandProcessed(Entry<T> e, ClientResponseHandler<T> handler)
+        public void executeAfterCommandProcessed(Entry e, ClientResponseHandler handler)
         {
-            if (e.index <= log.getStateMachineIndex())
+            if (e.Index <= log.getStateMachineIndex())
             {
                 handler(e);
             }
@@ -777,7 +774,7 @@ namespace NRaft
             {
                 lock (pendingCommands)
                 {
-                    pendingCommands.Enqueue(new PendingCommand<T>(e, handler));
+                    pendingCommands.Enqueue(new PendingCommand(e, handler));
                 }
             }
         }
@@ -793,8 +790,8 @@ namespace NRaft
                 while (pendingCommands.Count > 0)
                 {
                     //  logger.LogInformation("Updating All Pending Requests {} > {} ", pendingCommands.Count, log.getCommitIndex());
-                    PendingCommand<T> item = pendingCommands.Dequeue();
-                    if (item.entry.index <= log.getStateMachineIndex())
+                    PendingCommand item = pendingCommands.Dequeue();
+                    if (item.entry.Index <= log.getStateMachineIndex())
                     {
                         logger.LogDebug($"Returning Pending Command Response To Client {item.entry}");
                         item.handler(item.entry);
@@ -833,11 +830,11 @@ namespace NRaft
             }
         }
 
-        public void onLogEntryApplied(Entry<T> entry)
+        public void onLogEntryApplied(Entry entry)
         {
-            //       Command<T> command = entry.getCommand();
+            //       Command command = entry.getCommand();
             //      if (command.getCommandType() == StateMachine.COMMAND_ID_ADD_PEER) {
-            //             AddPeerCommand<T> addPeerCommand = ((AddPeerCommand<T>) command);
+            //             AddPeerCommand addPeerCommand = ((AddPeerCommand) command);
             //         if (addPeerCommand.bootstrap) {
             //            logger.LogInformation(" ********************** BOOTSTRAP **********************", addPeerCommand.peerId);
             //            peers.clear();
@@ -847,7 +844,7 @@ namespace NRaft
             //            peers.put(addPeerCommand.peerId, new Peer(addPeerCommand.peerId));
             //         }
             //      } else if (command.getCommandType() == StateMachine.COMMAND_ID_DEL_PEER) {
-            //             DelPeerCommand<T> delPeerCommand = ((DelPeerCommand<T>) command);
+            //             DelPeerCommand delPeerCommand = ((DelPeerCommand) command);
             //         logger.LogInformation(" ********************** DelPeer #{} ********************** ", delPeerCommand.peerId);
             //         peers.remove(delPeerCommand.peerId);
             //      }

@@ -6,12 +6,12 @@ using Microsoft.Extensions.Logging;
 
 namespace NRaft
 {
-    public static class StateMachine {
+    internal partial class StateManager {
         public static int SNAPSHOT_FILE_VERSION = 1;
-        public static int COMMAND_ID_ADD_PEER = int.MaxValue;
-        public static int COMMAND_ID_DEL_PEER = int.MaxValue-2;
-        public static int COMMAND_ID_NEW_TERM = int.MaxValue -3;
-        public static int COMMAND_ID_HEALTH_CHECK = int.MaxValue -4;
+        public static int COMMAND_ID_ADD_PEER = -1;
+        public static int COMMAND_ID_DEL_PEER = -2;
+        public static int COMMAND_ID_NEW_TERM = -3;
+        public static int COMMAND_ID_HEALTH_CHECK = -4;
 
         public static long getSnapshotIndex(string path)
         {
@@ -66,11 +66,13 @@ namespace NRaft
             return $"Peer-{peerId}({host}:{port})";
         }
     }
-    public interface IStateMachine
-    {
-        PeerInfo addPeer(string host, int port, bool bootstrap);
-        void applyHealthCheck(long val);
-        void delPeer(int peerId);
+
+    public interface IStateMachine {
+
+        void saveState(System.IO.BinaryWriter writer);
+
+        void loadState(System.IO.BinaryReader reader);
+        void registerCommand(ICommandManager manager);
     }
 
     /**
@@ -79,10 +81,9 @@ namespace NRaft
      * It contains the state we want to coordinate across a distributed cluster.
      * 
      */
-    public abstract class StateMachine<T> : IStateMachine
+    internal partial class StateManager 
     {
-
-        public static readonly ILogger logger = LoggerFactory.GetLogger<StateMachine<T>>();
+        public static readonly ILogger logger = LoggerFactory.GetLogger<StateManager>();
 
         public enum SnapshotMode
         {
@@ -104,9 +105,7 @@ namespace NRaft
             CopyOnWrite
         }
 
-        public Dictionary<int, Func<Command<T>>> commandFactories = new Dictionary<int, Func<Command<T>>>();
-
-        private List<Action<Entry<T>>> listeners = new List<Action<Entry<T>>>();
+        private List<Action<Entry>> listeners = new List<Action<Entry>>();
 
         // State
         private long index;
@@ -122,12 +121,11 @@ namespace NRaft
          */
         private long lastCommandAppliedMillis;
 
-        public StateMachine()
+        public IStateMachine StateMachine { get; private set; }
+
+        public StateManager(IStateMachine stateMachine)
         {
-            registerCommand(StateMachine.COMMAND_ID_ADD_PEER, () => new AddPeerCommand());
-            registerCommand(StateMachine.COMMAND_ID_DEL_PEER, () => new DelPeerCommand());
-            registerCommand(StateMachine.COMMAND_ID_NEW_TERM, () => new NewTermCommand());
-            registerCommand(StateMachine.COMMAND_ID_HEALTH_CHECK, () => new HealthCheckCommand());
+            this.StateMachine = stateMachine;
         }
 
         public SnapshotMode getSnapshotMode()
@@ -135,30 +133,11 @@ namespace NRaft
             return SnapshotMode.Blocking;
         }
 
-        public void registerCommand(int id, Func<Command<T>> factory)
-        {
-            Debug.Assert(!commandFactories.ContainsKey(id));
-            commandFactories.Add(id, factory);
-        }
-
-        public Command<T> makeCommandById(int id)
-        {
-            if (!commandFactories.TryGetValue(id, out Func<Command<T>> factory))
-            {
-                throw new Exception("Could not find command factory for command type " + id);
-            }
-            return factory();
-        }
-
-        public abstract void saveState(System.IO.BinaryWriter writer);
-
-        public abstract void loadState(System.IO.BinaryReader reader);
-
         public void writeSnapshot(string path, long prevTerm)
         {
             using (var writer = new System.IO.BinaryWriter(File.OpenWrite(path)))
             { // TODO zip
-                writer.Write(StateMachine.SNAPSHOT_FILE_VERSION);
+                writer.Write(StateManager.SNAPSHOT_FILE_VERSION);
                 writer.Write(term);
                 writer.Write(index);
                 writer.Write(prevTerm);
@@ -169,7 +148,8 @@ namespace NRaft
                 {
                     peer.write(writer);
                 }
-                saveState(writer);
+
+                StateMachine.saveState(writer);
             }
         }
 
@@ -178,9 +158,9 @@ namespace NRaft
             using (var reader = new BinaryReader(File.OpenRead(path)))
             {
                 int fileVersion = reader.ReadInt32();
-                if (fileVersion > StateMachine.SNAPSHOT_FILE_VERSION)
+                if (fileVersion > StateManager.SNAPSHOT_FILE_VERSION)
                 {
-                    throw new IOException("Incompatible Snapshot Format: " + fileVersion + " > " + StateMachine.SNAPSHOT_FILE_VERSION);
+                    throw new IOException("Incompatible Snapshot Format: " + fileVersion + " > " + StateManager.SNAPSHOT_FILE_VERSION);
                 }
                 term = reader.ReadInt64();
                 index = reader.ReadInt64();
@@ -195,7 +175,7 @@ namespace NRaft
                     PeerInfo p = new PeerInfo(reader);
                     peers.Add(p.peerId, p);
                 }
-                loadState(reader);
+                StateMachine.loadState(reader);
             }
         }
 
@@ -227,18 +207,18 @@ namespace NRaft
             return prevTerm;
         }
 
-        internal void apply(Entry<T> entry)
+        internal void apply(Entry entry)
         {
             //Debug.Assert (this.index + 1 == entry.index) : (this.index + 1) + "!=" + entry.index;
-            Debug.Assert(this.term <= entry.term);
-            entry.command.applyTo((T)this);
-            this.index = entry.index;
-            this.term = entry.term;
+            Debug.Assert(this.term <= entry.Term);
+            entry.Command.applyTo(this.StateMachine);
+            this.index = entry.Index;
+            this.term = entry.Term;
             lastCommandAppliedMillis = DateTime.Now.Millisecond;
             fireEntryAppliedEvent(entry);
         }
 
-        private void fireEntryAppliedEvent(Entry<T> entry)
+        private void fireEntryAppliedEvent(Entry entry)
         {
             lock (listeners)
             {
@@ -256,7 +236,7 @@ namespace NRaft
             }
         }
 
-        public void addListener(Action<Entry<T>> listener)
+        public void addListener(Action<Entry> listener)
         {
             lock (listeners)
             {

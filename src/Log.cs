@@ -10,6 +10,11 @@ using Microsoft.Extensions.Logging;
 
 namespace NRaft
 {
+    public interface ICommandManager
+    {
+        void registerCommand<T>() where T : Command;
+    }
+
     /**
      * A raft log is the backbone of the raft algorithm. It stores an ordered list of commands that have been agreed upon by consensus, as well
      * as the tentative list of future commands yet to be confirmed.
@@ -21,20 +26,21 @@ namespace NRaft
      * </ul>
      * 
      */
-    public class Log<T> where T : StateMachine<T>
+    internal class Log : ICommandManager
     {
+        public Dictionary<int, Func<Command>> commandfactories = new Dictionary<int, Func<Command>>();
 
-        public static readonly ILogger logger = LoggerFactory.GetLogger<Log<T>>();
+        public static readonly ILogger logger = LoggerFactory.GetLogger<Log>();
 
         public static readonly int LOG_FILE_VERSION = 3;
 
         /**
          * The log's in-memory buffer of log entries
          */
-        private readonly List<Entry<T>> entries = new List<Entry<T>>();
+        private readonly List<Entry> entries = new List<Entry>();
 
         private readonly Config config;
-        private LRUCache<T> entryFileCache = new LRUCache<T>();
+        private LRUCache entryFileCache = new LRUCache();
 
         /**
          * Our current journal file's output stream
@@ -56,16 +62,23 @@ namespace NRaft
         /**
          * The state machine we are coordinating via raft
          */
-        private T stateMachine;
+        private StateManager stateMachine;
         public bool IsRunning => cancel != null && !cancel.IsCancellationRequested;
-        public Log(Config config, T stateMachine)
+        public Log(Config config, StateManager stateMachine)
         {
+            registerCommand<AddPeerCommand>();
+            registerCommand<DelPeerCommand>();
+            registerCommand<NewTermCommand>();
+            registerCommand<HealthCheckCommand>();
+
+            stateMachine.StateMachine.registerCommand(this);
+
             this.stateMachine = stateMachine;
             this.config = config;
             Directory.CreateDirectory(this.config.getLogDir());
 
             // obtain the raft logs lock file
-          //  obtainFileLock();
+            //  obtainFileLock();
 
             // restore our state to the last snapshot
             loadSnapshot();
@@ -80,9 +93,9 @@ namespace NRaft
             Task.Run(writeLoop);
         }
 
-        public T getStateMachine()
+        public StateManager getStateMachine()
         {
-            return  stateMachine;
+            return stateMachine;
         }
 
         /**
@@ -90,19 +103,19 @@ namespace NRaft
          * 
          * @return true if the entry was successfully appended to the log, or was already in our log to begin with
          */
-        public bool append(Entry<T> entry)
+        public bool append(Entry entry)
         {
             lock (this)
             {
                 // Debug.Assert entry != null;
                 // check if the entry is already in our log
-                if (entry.index <= lastIndex)
+                if (entry.Index <= lastIndex)
                 {
                     //Debug.Assert entry.index >= commitIndex : entry.index + " >= " + commitIndex;
-                    if (getTerm(entry.index) != entry.term)
+                    if (getTerm(entry.Index) != entry.Term)
                     {
-                        logger.LogWarning($"Log is conflicted at {entry} : {getTerm(entry.index)}");
-                        wipeConflictedEntries(entry.index);
+                        logger.LogWarning($"Log is conflicted at {entry} : {getTerm(entry.Index)}");
+                        wipeConflictedEntries(entry.Index);
                     }
                     else
                     {
@@ -112,7 +125,7 @@ namespace NRaft
 
 
                 // validate that this is an acceptable entry to append next
-                if (entry.index == lastIndex + 1 && entry.term >= lastTerm)
+                if (entry.Index == lastIndex + 1 && entry.Term >= lastTerm)
                 {
                     //logger.LogInformation("### APPENDING {} {} - {}", entry.term, entry.index, entry.command);
 
@@ -123,13 +136,13 @@ namespace NRaft
                     if (firstIndex == 0)
                     {
                         Debug.Assert(entries.Count == 1);
-                        firstIndex = entry.index;
-                        firstTerm = entry.term;
+                        firstIndex = entry.Index;
+                        firstTerm = entry.Term;
 
-                        logger.LogInformation($"Setting First Index = {firstIndex} ({entry.index})");
+                        logger.LogInformation($"Setting First Index = {firstIndex} ({entry.Index})");
                     }
-                    lastIndex = entry.index;
-                    lastTerm = entry.term;
+                    lastIndex = entry.Index;
+                    lastTerm = entry.Term;
 
                     return true;
                 }
@@ -141,11 +154,11 @@ namespace NRaft
         /**
          * Append a new command to the log. Should only be called by a Leader
          */
-        public Entry<T> append(long term, Command<T> command)
+        public Entry append(long term, Command command)
         {
             lock (this)
             {
-                Entry<T> e = new Entry<T>(term, lastIndex + 1, command);
+                Entry e = new Entry(term, lastIndex + 1, command);
                 if (append(e))
                 {
                     return e;
@@ -160,7 +173,7 @@ namespace NRaft
         /**
          * Get an entry from our log, by index
          */
-        public Entry<T> getEntry(long index)
+        public Entry getEntry(long index)
         {
             lock (this)
             {
@@ -169,10 +182,10 @@ namespace NRaft
                     if (index >= firstIndex && entries.Count > 0)
                     {
                         Debug.Assert(index - firstIndex < int.MaxValue);
-                        Debug.Assert(firstIndex == entries[0].index);
+                        Debug.Assert(firstIndex == entries[0].Index);
                         //Debug.Assert( (index - firstIndex) < entries.Count : "index=" + index + ", first=" + firstIndex;
-                        Entry<T> e = entries[(int)(index - firstIndex)];
-                        Debug.Assert(e.index == index);
+                        Entry e = entries[(int)(index - firstIndex)];
+                        Debug.Assert(e.Index == index);
                         return e;
                     }
                     else
@@ -187,14 +200,14 @@ namespace NRaft
         /**
          * Fetch entries from fromIndex, up to maxEntries. Returns all or none.
          */
-        public Entry<T>[] getEntries(long fromIndex, int maxEntries)
+        public Entry[] getEntries(long fromIndex, int maxEntries)
         {
             if (fromIndex > lastIndex)
             {
                 return null;
             }
 
-            var list = new Entry<T>[(int)Math.Min(maxEntries, (lastIndex - fromIndex) + 1)];
+            var list = new Entry[(int)Math.Min(maxEntries, (lastIndex - fromIndex) + 1)];
             for (int i = 0; i < list.Length; i++)
             {
                 list[i] = getEntry(fromIndex + i);
@@ -228,12 +241,12 @@ namespace NRaft
             {
                 return snapshotTerm;
             }
-            Entry<T> e = getEntry(index);
+            Entry e = getEntry(index);
             if (e == null)
             {
                 logger.LogError($"Could not find entry in log for {index}");
             }
-            return e.term;
+            return e.Term;
         }
 
         /**
@@ -265,11 +278,6 @@ namespace NRaft
                     lastTerm = 0;
                 }
             }
-        }
-
-        public List<Entry<T>> getEntries()
-        {
-            return entries;
         }
 
         public string getLogDirectory()
@@ -327,7 +335,7 @@ namespace NRaft
             {
                 return true;
             }
-            Entry<T> entry = getEntry(index);
+            Entry entry = getEntry(index);
             if (entry == null)
             {
                 if (index == stateMachine.getPrevIndex())
@@ -336,7 +344,7 @@ namespace NRaft
                 }
             }
 
-            return (entry != null && entry.term == term);
+            return (entry != null && entry.Term == term);
         }
 
         public void stop()
@@ -354,7 +362,7 @@ namespace NRaft
                         writer.Close();
                         writer = null;
                     }
-                    logger.LogInformation($"commitIndex = {commitIndex}, lastIndex = {lastIndex}" );
+                    logger.LogInformation($"commitIndex = {commitIndex}, lastIndex = {lastIndex}");
                 }
                 catch (Exception t)
                 {
@@ -375,7 +383,7 @@ namespace NRaft
                     {
                         writer.Flush();
                     }
-                   // lock (this)
+                    // lock (this)
                     {
                         await Task.Delay(100);
                     }
@@ -416,10 +424,10 @@ namespace NRaft
                 // if the file is cached, we can do a quick check
                 lock (entryFileCache)
                 {
-                    List<Entry<T>> list = entryFileCache.Get(Path.GetFullPath(file));
+                    List<Entry> list = entryFileCache.Get(Path.GetFullPath(file));
                     if (list != null && list.Count > 0)
                     {
-                        if (list[0].index <= index && list[list.Count - 1].index >= index)
+                        if (list[0].Index <= index && list[list.Count - 1].Index >= index)
                         {
                             return file;
                         }
@@ -432,7 +440,7 @@ namespace NRaft
                 {
                     string fn = Path.GetFileName(f);
                     var m = Regex.Match(fn, "([A-F0-9]{16})\\.log");
-                    if ( m.Success)
+                    if (m.Success)
                     {
                         long i = Convert.ToInt64(m.Groups[1].Value, 16);
                         if (i <= index && i > bestIndex)
@@ -491,17 +499,17 @@ namespace NRaft
                     {
                         while (commitIndex > stateMachine.getIndex())
                         {
-                            Entry<T> e = getEntry(stateMachine.getIndex() + 1);
+                            Entry e = getEntry(stateMachine.getIndex() + 1);
                             Debug.Assert(e != null);
-                            Debug.Assert(e.index == stateMachine.getIndex() + 1);
+                            Debug.Assert(e.Index == stateMachine.getIndex() + 1);
                             stateMachine.apply(e);
-                            ensureCorrectLogFile(e.index);
+                            ensureCorrectLogFile(e.Index);
                             e.write(writer);
-                            if (e.command.getCommandType() == StateMachine.COMMAND_ID_NEW_TERM)
+                            if (e.Command is NewTermCommand)
                             {
                                 logger.LogInformation($"Writing new term {e}");
                             }
-                            if ((e.index % config.getEntriesPerSnapshot()) == 0)
+                            if ((e.Index % config.getEntriesPerSnapshot()) == 0)
                             {
                                 saveSnapshot();
                             }
@@ -536,6 +544,31 @@ namespace NRaft
             }
         }
 
+        public Command makeCommandById(int id)
+        {
+            if (!commandfactories.TryGetValue(id, out Func<Command> factory))
+            {
+                throw new Exception("Could not find command factory for command type " + id);
+            }
+
+            return factory();
+        }
+
+        public void registerCommand<TCommand>() where TCommand : Command
+        {
+            Func<Command> factory = () => (TCommand)Activator.CreateInstance<TCommand>();
+            try
+            {
+                var cmd = factory();
+                var id = cmd.CommandId;
+                commandfactories.Add(id, factory);
+            }
+            catch
+            {
+                throw new Exception($"Command {typeof(TCommand).FullName} must have a public default constructor.");
+            }
+        }
+
         /**
          * Read and apply all available entries in the log from disk
          * 
@@ -545,7 +578,7 @@ namespace NRaft
         {
             lock (this)
             {
-                Entry<T> entry = null;
+                Entry entry = null;
                 do
                 {
                     entry = getEntryFromDisk(stateMachine.getIndex() + 1);
@@ -556,26 +589,26 @@ namespace NRaft
                 } while (entry != null);
 
                 // get the most recent file of entries
-                List<Entry<T>> list = loadLogFile(getFile(stateMachine.getIndex(), true));
+                List<Entry> list = loadLogFile(getFile(stateMachine.getIndex(), true));
                 if (list != null && list.Count > 0)
                 {
                     Debug.Assert(entries.Count == 0);
                     entries.AddRange(list);
-                    firstIndex = entries[0].index;
-                    firstTerm = entries[0].term;
-                    lastIndex = entries[entries.Count - 1].index;
-                    lastTerm = entries[entries.Count - 1].term;
+                    firstIndex = entries[0].Index;
+                    firstTerm = entries[0].Term;
+                    lastIndex = entries[entries.Count - 1].Index;
+                    lastTerm = entries[entries.Count - 1].Term;
                     // TODO: rename existing file in case of failure
                     // re-write writer the last file
                     writer = new BinaryWriter(File.OpenWrite(getFile(firstIndex, true)));
                     writer.Write(LOG_FILE_VERSION);
-                    foreach (Entry<T> e in list)
+                    foreach (Entry e in list)
                     {
                         e.write(writer);
                     }
                     writer.Flush();
                     commitIndex = lastIndex;
-                    logger.LogInformation($"Log First Index = {firstIndex}, Last Index = {lastIndex}" );
+                    logger.LogInformation($"Log First Index = {firstIndex}, Last Index = {lastIndex}");
                 }
 
                 lock (entryFileCache)
@@ -589,24 +622,24 @@ namespace NRaft
          * An LRU cache of entries loaded from disk
          */
         // TODO
-        //    private Map<String, List<Entry<T>>> entryFileCache = new LinkedHashMap<String, List<Entry<T>>>(3, 0.75f, true) {
-        //       protected bool removeEldestEntry(Map.Entry<String, List<Entry<T>>> eldest) {
+        //    private Map<String, List<Entry>> entryFileCache = new LinkedHashMap<String, List<Entry>>(3, 0.75f, true) {
+        //       protected bool removeEldestEntry(Map.Entry<String, List<Entry>> eldest) {
         //          return size() > 2;
         //       }
         //    };
 
-        private Entry<T> getEntryFromDisk(long index)
+        private Entry getEntryFromDisk(long index)
         {
             var file = getFile(index, true);
             if (File.Exists(file))
             {
-                List<Entry<T>> list = loadLogFile(file);
+                List<Entry> list = loadLogFile(file);
                 if (list != null && list.Count > 0)
                 {
-                    int i = (int)(index - list[0].index);
+                    int i = (int)(index - list[0].Index);
                     if (i >= 0 && i < list.Count)
                     {
-                        Debug.Assert(list[i].index == index);
+                        Debug.Assert(list[i].Index == index);
                         return list[i];
                     }
                 }
@@ -618,14 +651,14 @@ namespace NRaft
             return null;
         }
 
-        public List<Entry<T>> loadLogFile(string file)
+        public List<Entry> loadLogFile(string file)
         {
             lock (entryFileCache)
             {
-                List<Entry<T>> list = entryFileCache.Get(Path.GetFullPath(file)); 
+                List<Entry> list = entryFileCache.Get(Path.GetFullPath(file));
                 if (list == null)
                 {
-                    list = new List<Entry<T>>();
+                    list = new List<Entry>();
                     if (File.Exists(file))
                     {
                         logger.LogInformation($"Loading Log File {file}");
@@ -635,19 +668,20 @@ namespace NRaft
                             {
                                 int version = reader.ReadInt32();
                                 Debug.Assert(version <= LOG_FILE_VERSION);
-                                Entry<T> last = null;
+
+                                Entry last = null;
                                 while (reader.BaseStream.Position != reader.BaseStream.Length)
                                 {
-                                    Entry<T> e = new Entry<T>(reader, version, stateMachine);
+                                    Entry e = new Entry(reader, version, this);
                                     if (last != null)
                                     {
-                                        if (e.index != last.index + 1)
+                                        if (e.Index != last.Index + 1)
                                         {
                                             logger.LogError($"Log File {file} is inconsistent. {last} followed by {e}");
                                         }
 
-                                        Debug.Assert(e.term >= last.term);
-                                        Debug.Assert(e.index == last.index + 1);
+                                        Debug.Assert(e.Term >= last.Term);
+                                        Debug.Assert(e.Index == last.Index + 1);
                                     }
                                     list.Add(e);
                                     last = e;
@@ -681,20 +715,22 @@ namespace NRaft
                     }
 
                     logger.LogInformation($"Compacting log size = {entries.Count}");
-                    List<Entry<T>> entriesToKeep = new List<Entry<T>>();
-                    foreach (Entry<T> e in entries)
+                    List<Entry> entriesToKeep = new List<Entry>();
+                    foreach (Entry e in entries)
                     {
-                        if (e.index > commitIndex || e.index > stateMachine.getIndex() || e.index > lastIndex - config.getEntriesPerFile())
+                        if (e.Index > commitIndex || e.Index > stateMachine.getIndex() || e.Index > lastIndex - config.getEntriesPerFile())
                         {
                             entriesToKeep.Add(e);
                         }
                     }
                     entries.Clear();
                     entries.AddRange(entriesToKeep);
-                    Entry<T> first = entries.First();
-                    firstIndex = first.index;
-                    firstTerm = first.term;
-                    logger.LogInformation($"Compacted log new size = {entries.Count}, firstIndex = {firstIndex}" );
+
+                    // TODO compact command factories
+                    Entry first = entries.First();
+                    firstIndex = first.Index;
+                    firstTerm = first.Term;
+                    logger.LogInformation($"Compacted log new size = {entries.Count}, firstIndex = {firstIndex}");
                 }
             }
         }
@@ -709,7 +745,7 @@ namespace NRaft
                 long index = commitIndex - (config.getEntriesPerSnapshot() * 4);
                 while (index >= 0)
                 {
-                    logger.LogInformation($" Checking ::  {index.ToString("X16")}" );
+                    logger.LogInformation($" Checking ::  {index.ToString("X16")}");
                     var file = getFile(index, true);
                     if (File.Exists(file))
                     {
@@ -727,7 +763,7 @@ namespace NRaft
                 var p = new Regex("raft\\.([0-9A-F]{16})\\.snapshot");
                 foreach (var file in Directory.GetFiles(getLogDirectory()))
                 {
-                    var m = p.Matches( Path.GetFileName(file));
+                    var m = p.Matches(Path.GetFileName(file));
                     if (m.Count > 0)
                     {
                         long snapIndex = Convert.ToInt64(m[0].Groups[1].Value, 16);
@@ -765,7 +801,7 @@ namespace NRaft
                 var file = Path.Combine(getLogDirectory(), "raft.snapshot");
                 if (File.Exists(file))
                 {
-                    long oldIndex = StateMachine.getSnapshotIndex(file);
+                    long oldIndex = StateManager.getSnapshotIndex(file);
                     File.Move(file, Path.Combine(getLogDirectory(), $"raft.{oldIndex.ToString("X16")}.snapshot"));
                 }
                 File.Move(openFile, file);
