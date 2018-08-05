@@ -5,7 +5,7 @@ namespace NRaft
 {
 
 
-    public class HealthCheckCommand : Command<IInternalStateMachine>
+    public class HealthCheckCommand : Command<IHealthCheckStateMachine>
     {
         public int CommandId => StateManager.COMMAND_ID_HEALTH_CHECK;
 
@@ -19,7 +19,7 @@ namespace NRaft
             val = random.Next();
         }
 
-        public void ApplyTo(IInternalStateMachine state)
+        public void ApplyTo(IHealthCheckStateMachine state)
         {
             state.ApplyHealthCheck(val);
         }

@@ -163,15 +163,17 @@ namespace NRaftTest
 
             for (int i = 1; i <= NUM_PEERS; i++)
             {
-                Config cfg = new Config(i).WithLogDir(logDirs[i - 1]).WithClusterName("TEST");
-                RaftEngine raft = new RaftEngine(cfg, new TestStateMachine(), new RPC(rafts));
-                for (int j = 1; j <= NUM_PEERS; j++)
+                Config cfg = new Config(i)
+                    .WithLogDir(logDirs[i - 1])
+                    .WithClusterName("TEST");
+
+                for (int j = 0; j < NUM_PEERS; j++)
                 {
-                    if (j != i)
-                    {
-                        raft.AddPeer(j);
-                    }
+                    cfg.AddPeer(j+1);
                 }
+
+                RaftEngine raft = new RaftEngine(cfg, new TestStateMachine(), new RPC(rafts));
+       
                 Dump(raft);
                 rafts.Add(i, raft);
             }
@@ -181,13 +183,12 @@ namespace NRaftTest
                 foreach (var raft in rafts.Values)
                 {
                     raft.Start();
-                    await Task.Delay(100);
                 }
 
                 await Task.Delay(3000);
                 while (true)
                 {
-                    await Task.Delay(1000 + rnd.Next(20) * 500);
+                    await Task.Delay(1000 + rnd.Next(10) * 500);
                     foreach (var r in rafts.Values)
                     {
                         r.ExecuteCommand(MakeNewCommand(), null);

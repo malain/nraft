@@ -69,7 +69,7 @@ namespace NRaft {
                 var pStateManager = Expression.Parameter(typeof(StateManager));
 
                 Expression instance = pStateManager;
-                if(stateMachineType != typeof(IInternalStateMachine)) {
+                if(stateMachineType != typeof(IHealthCheckStateMachine)) {
                     instance = Expression.Property(pStateManager, typeof(StateManager).GetProperty("StateMachine"));
                 }
 

@@ -18,7 +18,7 @@ namespace NRaft
      * </ul>
      */
 
-    public class RaftEngine : RaftRequests 
+    public class RaftEngine : RaftRequests
     {
 
         public static readonly ILogger logger = LoggerFactory.GetLogger<RaftEngine>();
@@ -72,6 +72,12 @@ namespace NRaft
 
         public RaftEngine(Config config, IStateMachine stateMachineManager, RaftRPC rpc)
         {
+            SetPeerId(config.PeerId);
+            foreach (var peer in config.Peers)
+            {
+                this.AddPeer(peer.peerId);
+            }
+
             this.stateMachineManager = stateMachineManager;
             this.rpc = rpc;
             this.config = config;
@@ -79,7 +85,6 @@ namespace NRaft
             stateMachine.AddListener(OnLogEntryApplied);
             this.Log = new Log(config, stateMachine);
             this.lastTermCommitted = this.currentTerm = Log.LastTerm;
-            SetPeerId(config.PeerId);
         }
 
         public void Start()
@@ -129,10 +134,10 @@ namespace NRaft
             return $"Raft[{myPeerId}] {role} (Leader is {leaderId}) ";
         }
 
-        public T GetStateMachineManager<T>() where T: IStateMachine
+        public T GetStateMachineManager<T>() where T : IStateMachine
         {
-                return (T)stateMachineManager;
-            }
+            return (T)stateMachineManager;
+        }
 
         public void SetPeerId(int peerId)
         {
@@ -364,7 +369,7 @@ namespace NRaft
             }
         }
 
-        public void HandleVoteRequest(String clusterName, long term, int candidateId, long lastLogIndex, long lastLogTerm,VoteResponseHandler handler)
+        public void HandleVoteRequest(String clusterName, long term, int candidateId, long lastLogIndex, long lastLogTerm, VoteResponseHandler handler)
         {
             lock (this)
             {
@@ -558,14 +563,14 @@ namespace NRaft
                 if (term >= currentTerm)
                 {
                     bool rescheduled = false;
-                    if (term > currentTerm || this.leaderId != leaderId)
+                    if (term > currentTerm || this.leaderId != leaderId)
                     {
                         this.leaderId = leaderId;
                         rescheduled = StepDown(term);
                         role = Role.Follower;
                     }
-                    
-                    if(!rescheduled)
+
+                    if (!rescheduled)
                         RescheduleElection();
 
                     if (Log.IsConsistentWith(prevLogIndex, prevLogTerm))
@@ -586,7 +591,8 @@ namespace NRaft
                         Log.CommitIndex = Math.Min(leaderCommit, Log.LastIndex);
 
                         logger.LogTrace($"{this} is fine with append entries from {leaderId}");
-                        handler(currentTerm, true, Log.LastIndex);
+                        if(handler != null)
+                            handler(currentTerm, true, Log.LastIndex);
                         return;
                     }
                     else
@@ -678,7 +684,7 @@ namespace NRaft
             }
         }
 
-        public void HandleInstallSnapshotRequest(long term, long index, long length, int partSize, int part, byte[] data,InstallSnapshotResponseHandler handler)
+        public void HandleInstallSnapshotRequest(long term, long index, long length, int partSize, int part, byte[] data, InstallSnapshotResponseHandler handler)
         {
             logger.LogInformation($"handleInstallSnapshot: length={length} part={part}");
             RescheduleElection();

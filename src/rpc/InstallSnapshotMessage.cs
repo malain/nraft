@@ -10,9 +10,9 @@ namespace NRaft
         private long length;
         private int partSize;
         private int part;
-        private byte[] data;
+        private string data;
 
-        public InstallSnapshotRequest(int peerId, long term, long index, long length, int partSize, int part, byte[] data)
+        public InstallSnapshotRequest(int peerId, long term, long index, long length, int partSize, int part, string data)
         {
             this.MessageType = MSG_ID;
             this.PeerId = peerId;
@@ -30,6 +30,6 @@ namespace NRaft
         public long Length { get => length; set => length = value; }
         public int PartSize { get => partSize; set => partSize = value; }
         public int Part { get => part; set => part = value; }
-        public byte[] Data { get => data; set => data = value; }
+        public string Data { get => data; set => data = value; }
     }
 }

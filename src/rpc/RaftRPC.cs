@@ -5,7 +5,7 @@ namespace NRaft
 {
     public interface IRpcSender
     {
-        Task<ResponseMessage> SendMessage(RequestMessage msg);
+        Task<ResponseMessage> SendMessage(PeerInfo peer, RequestMessage msg);
     }
 
     ///////// Request Handlers ///////// 

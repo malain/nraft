@@ -6,7 +6,7 @@ namespace NRaft
     /**
      * Formally add a raft peer to the cluster. The peer is considered part of quorum after this command is committed.
      */
-    public class AddPeerCommand : Command<IInternalStateMachine>
+    public class AddPeerCommand : Command<Config>
     {
         public string host;
         public int port;
@@ -17,16 +17,17 @@ namespace NRaft
 
         public AddPeerCommand() { }
 
-        public AddPeerCommand(string host, int port, bool bootstrap=false)
+        public AddPeerCommand(int peerId, string host, int port, bool bootstrap=false)
         {
+            this.peerId = peerId;
             this.host = host;
             this.port = port;
             this.bootstrap = bootstrap;
         }
 
-        public void ApplyTo(IInternalStateMachine state)
+        public void ApplyTo(Config state)
         {
-            peerId = state.AddPeer(host, port, bootstrap).peerId;
+            peerId = state.AddPeer(host, port, bootstrap, peerId).peerId;
         }
 
         public void Serialize(BinaryWriter writer)

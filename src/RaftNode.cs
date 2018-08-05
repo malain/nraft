@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
@@ -26,7 +27,7 @@ namespace NRaft
                 case AppendEntriesRequest.MSG_ID:
                     var apr = (AppendEntriesRequest)message;
                     var entries = new List<Entry>();
-                    using (var stream = new MemoryStream(apr.Data))
+                    using (var stream = new MemoryStream(Convert.FromBase64String( apr.Data)))
                     {
                         using (var reader = new BinaryReader(stream))
                         {
@@ -46,7 +47,7 @@ namespace NRaft
                     break;
                 case InstallSnapshotRequest.MSG_ID:
                     var isr = (InstallSnapshotRequest)message;
-                    engine.HandleInstallSnapshotRequest(isr.Term, isr.Index, isr.Length, isr.PartSize, isr.Part, isr.Data, (success) =>
+                    engine.HandleInstallSnapshotRequest(isr.Term, isr.Index, isr.Length, isr.PartSize, isr.Part, Convert.FromBase64String( isr.Data ), (success) =>
                     {
                         var response = new InstallSnapshotResponse { Success = success };
                         tcs.SetResult(response);
@@ -70,31 +71,47 @@ namespace NRaft
 
         void RaftRPC.SendRequestVote(string clusterName, int peerId, long term, int candidateId, long lastLogIndex, long lastLogTerm, VoteResponseHandler handler)
         {
+            var peer = Configuration.GetPeer(peerId);
             var msg = new RequestVoteRequest(clusterName, peerId, term, candidateId, lastLogIndex, lastLogTerm);
             Task.Run(async () =>
             {
-                var response = await sender.SendMessage(msg) as RequestVoteResponse;
+                var response = await sender.SendMessage(peer, msg) as RequestVoteResponse;
                 handler(response.Term, response.VoteGranted);
             });
         }
 
         void RaftRPC.SendAppendEntries(int peerId, long term, int leaderId, long prevLogIndex, long prevLogTerm, Entry[] entries, long leaderCommit, AppendEntriesResponseHandler handler)
         {
-            byte[] data = null;
+            var peer = Configuration.GetPeer(peerId);
+
+            string data = null;
+            using (var stream = new MemoryStream())
+            {
+                using (var writer = new BinaryWriter(stream))
+                {
+                    foreach(var entry in entries)
+                    {
+                        entry.Serialize(writer);
+                    }
+                }
+                data = Convert.ToBase64String(stream.ToArray());
+            }
             var msg = new AppendEntriesRequest(peerId, term, leaderId, prevLogIndex, prevLogTerm, data, leaderCommit);
             Task.Run(async () =>
             {
-                var response = await sender.SendMessage(msg) as AppendEntriesResponse;
+                var response = await sender.SendMessage(peer, msg) as AppendEntriesResponse;
                 handler(response.Term, response.Success, response.LastLogIndex);
             });
         }
 
         void RaftRPC.SendInstallSnapshot(int peerId, long term, long index, long length, int partSize, int part, byte[] data, InstallSnapshotResponseHandler handler)
         {
-            var msg = new InstallSnapshotRequest(peerId, term, index, length, partSize, part, data);
+            var peer = Configuration.GetPeer(peerId);
+
+            var msg = new InstallSnapshotRequest(peerId, term, index, length, partSize, part, Convert.ToBase64String( data));
             Task.Run(async () =>
             {
-                var response = await sender.SendMessage(msg) as InstallSnapshotResponse;
+                var response = await sender.SendMessage(peer, msg) as InstallSnapshotResponse;
                 handler(response.Success);
             });
         }

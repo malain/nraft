@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging;
 
 namespace NRaft
 {
+    
     public interface ICommandManager
     {
         void RegisterCommand<T>() where T : ICommand;
@@ -66,6 +67,7 @@ namespace NRaft
         public bool IsRunning => cancel != null && !cancel.IsCancellationRequested;
         public Log(Config config, StateManager stateManager)
         {
+            config.RegisterCommands(this);
             stateManager.RegisterCommands(this);
 
             this.stateManager = stateManager;

@@ -6,14 +6,12 @@ using Microsoft.Extensions.Logging;
 
 namespace NRaft
 {
-    public interface IInternalStateMachine : IStateMachine
+    public interface IHealthCheckStateMachine : IStateMachine
     {
-        PeerInfo AddPeer(string host, int port, bool bootstrap);
-        void DeletePeer(int peerId);
         void ApplyHealthCheck(long val);
     }
 
-    internal partial class StateManager: IInternalStateMachine
+    internal partial class StateManager: IHealthCheckStateMachine
     {
         public static int SNAPSHOT_FILE_VERSION = 1;
         public static int COMMAND_ID_ADD_PEER = -1;
@@ -46,48 +44,12 @@ namespace NRaft
 
         public void RegisterCommands(ICommandManager manager)
         {
-            manager.RegisterCommand<AddPeerCommand>();
-            manager.RegisterCommand<DelPeerCommand>();
-            manager.RegisterCommand<NewTermCommand>();
             manager.RegisterCommand<HealthCheckCommand>();
             StateMachine.RegisterCommands(manager);
         }
 
         void IStateMachine.SaveState(BinaryWriter writer)
         {
-        }
-    }
-
-    public class PeerInfo
-    {
-        public int peerId;
-        public string host;
-        public int port;
-
-        public PeerInfo(System.IO.BinaryReader reader)
-        {
-            peerId = reader.ReadInt32();
-            host = reader.ReadString();
-            port = reader.ReadInt32();
-        }
-
-        public PeerInfo(int peerId, string host, int port)
-        {
-            this.peerId = peerId;
-            this.host = host;
-            this.port = port;
-        }
-
-        public void Serialize(System.IO.BinaryWriter writer)
-        {
-            writer.Write(peerId);
-            writer.Write(host);
-            writer.Write(port);
-        }
-
-        public override string ToString()
-        {
-            return $"Peer-{peerId}({host}:{port})";
         }
     }
 
@@ -137,7 +99,6 @@ namespace NRaft
         private long count = 0;
         private long prevIndex;
         private long prevTerm;
-        private Dictionary<int, PeerInfo> peers = new Dictionary<int, PeerInfo>();
 
         /**
          * The timestamp of when we last applied a command
@@ -161,11 +122,6 @@ namespace NRaft
                 writer.Write(prevTerm);
                 writer.Write(count);
                 writer.Write(checksum);
-                writer.Write(peers.Count);
-                foreach (var peer in peers.Values)
-                {
-                    peer.Serialize(writer);
-                }
 
                 StateMachine.SaveState(writer);
             }
@@ -186,13 +142,7 @@ namespace NRaft
                 prevTerm = reader.ReadInt64();
                 count = reader.ReadInt64();
                 checksum = reader.ReadInt64();
-                peers.Clear();
-                int numPeers = reader.ReadInt32();
-                for (int i = 0; i < numPeers; i++)
-                {
-                    PeerInfo p = new PeerInfo(reader);
-                    peers.Add(p.peerId, p);
-                }
+
                 StateMachine.LoadState(reader);
             }
         }
@@ -277,28 +227,6 @@ namespace NRaft
             {
                 this.listeners.Add(listener);
             }
-        }
-
-        public PeerInfo AddPeer(string host, int port, bool bootstrap)
-        {
-            if (bootstrap)
-            {
-                peers.Clear();
-            }
-            int peerId = 1;
-            // find first available peerId
-            while (peers.ContainsKey(peerId))
-            {
-                peerId++;
-            }
-            PeerInfo p = new PeerInfo(peerId, host, port);
-            peers.Add(peerId, p);
-            return p;
-        }
-
-        public void DeletePeer(int peerId)
-        {
-            peers.Remove(peerId);
         }
 
         public void ApplyHealthCheck(long val)

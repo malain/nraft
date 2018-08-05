@@ -6,7 +6,7 @@ namespace NRaft
     /**
      * Formally removes a raft peer from the cluster. The peer is considered to have left the of quorum after this command is committed.
      */
-    public class DelPeerCommand : Command<IInternalStateMachine>
+    public class DelPeerCommand : Command<Config>
     {
         public int CommandId => StateManager.COMMAND_ID_DEL_PEER;
 
@@ -19,7 +19,7 @@ namespace NRaft
             this.peerId = peerId;
         }
 
-        public void ApplyTo(IInternalStateMachine state)
+        public void ApplyTo(Config state)
         {
             state.DeletePeer(peerId);
         }

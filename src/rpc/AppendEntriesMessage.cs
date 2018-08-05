@@ -9,10 +9,10 @@ namespace NRaft
         private int leaderId;
         private long prevLogIndex;
         private long prevLogTerm;
-        private byte[] data;
+        private string data;
         private long leaderCommit;
 
-        public AppendEntriesRequest(int peerId, long term, int leaderId, long prevLogIndex, long prevLogTerm, byte[] data, long leaderCommit)
+        public AppendEntriesRequest(int peerId, long term, int leaderId, long prevLogIndex, long prevLogTerm, string data, long leaderCommit)
         {
             this.MessageType = MSG_ID;
             this.PeerId = peerId;
@@ -29,7 +29,7 @@ namespace NRaft
         public int LeaderId { get => leaderId; set => leaderId = value; }
         public long PrevLogIndex { get => prevLogIndex; set => prevLogIndex = value; }
         public long PrevLogTerm { get => prevLogTerm; set => prevLogTerm = value; }
-        public byte[] Data { get => data; set => data = value; }
+        public string Data { get => data; set => data = value; }
         public long LeaderCommit { get => leaderCommit; set => leaderCommit = value; }
     }
 }
