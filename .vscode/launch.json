@@ -10,7 +10,7 @@
            "request": "launch",
            "preLaunchTask": "build",
            "program": "${workspaceRoot}/bin/Debug/netcoreapp2.1/nraft.dll",
-           "args": [],
+           "args": ["9999"],
            "cwd": "${workspaceFolder}",
            "stopAtEntry": false,
            "console": "externalTerminal"

@@ -4,7 +4,7 @@ using System.IO;
 using System.Threading.Tasks;
 using NRaft;
 
-namespace NRaftTest
+namespace NRaft
 {
     public class TestStateMachine : IStateMachine
     {
@@ -159,7 +159,7 @@ namespace NRaftTest
         }
     }
 
-    public class RPC : RaftRPC
+    public class RPC : IRaftRPC
     {
         private Dictionary<int, RaftEngine> rafts;
         private static Random rnd = new Random();
@@ -186,7 +186,7 @@ namespace NRaftTest
                     {
                         r.HandleVoteRequest(clusterName, term, candidateId, lastLogIndex, lastLogTerm, handler);
                     }
-                    catch (Exception t)
+                    catch (Exception)
                     {
                         // logger.error(t.getMessage(), t);
                     }
@@ -208,7 +208,7 @@ namespace NRaftTest
                    {
                        r.HandleAppendEntriesRequest(term, leaderId, prevLogIndex, prevLogTerm, entries, leaderCommit, handler);
                    }
-                   catch (Exception t)
+                   catch (Exception )
                    {
                         // logger.error(t.getMessage(), t);
                     }
@@ -229,7 +229,7 @@ namespace NRaftTest
                    {
                        r.HandleInstallSnapshotRequest(term, index, length, partSize, part, data, handler);
                    }
-                   catch (Exception t)
+                   catch (Exception )
                    {
                         //logger.error(t.getMessage(), t);
                     }
@@ -249,7 +249,7 @@ namespace NRaftTest
                    {
                        r.HandleClientRequest(command, handler);
                    }
-                   catch (Exception t)
+                   catch (Exception)
                    {
                         // logger.error(t.getMessage(), t);
                     }

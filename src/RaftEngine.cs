@@ -18,7 +18,7 @@ namespace NRaft
      * </ul>
      */
 
-    public class RaftEngine : RaftRequests
+    public class RaftEngine : IRaftRequests
     {
 
         public static readonly ILogger logger = LoggerFactory.GetLogger<RaftEngine>();
@@ -37,7 +37,7 @@ namespace NRaft
         private readonly Dictionary<int, PeerState> peers = new Dictionary<int, PeerState>();
         private readonly Queue<PendingCommand> pendingCommands = new Queue<PendingCommand>();
         internal readonly Log Log;
-        private readonly RaftRPC rpc;
+        private readonly IRaftRPC rpc;
         private readonly Config config;
 
         private Role role = Role.Joining;
@@ -70,7 +70,7 @@ namespace NRaft
             }
         }
 
-        public RaftEngine(Config config, IStateMachine stateMachineManager, RaftRPC rpc)
+        public RaftEngine(Config config, IStateMachine stateMachineManager, IRaftRPC rpc)
         {
             SetPeerId(config.PeerId);
             foreach (var peer in config.Peers)

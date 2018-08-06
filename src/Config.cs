@@ -7,33 +7,29 @@ namespace NRaft
     public class PeerInfo
     {
         public int peerId;
-        public string host;
-        public int port;
+        public string address;
 
         public PeerInfo(System.IO.BinaryReader reader)
         {
             peerId = reader.ReadInt32();
-            host = reader.ReadString();
-            port = reader.ReadInt32();
+            address = reader.ReadString();
         }
 
-        public PeerInfo(int peerId, string host, int port)
+        public PeerInfo(int peerId, string address)
         {
             this.peerId = peerId;
-            this.host = host;
-            this.port = port;
+            this.address = address;
         }
 
         public void Serialize(System.IO.BinaryWriter writer)
         {
             writer.Write(peerId);
-            writer.Write(host);
-            writer.Write(port);
+            writer.Write(address);
         }
 
         public override string ToString()
         {
-            return $"Peer-{peerId}({host}:{port})";
+            return $"Peer-{peerId} ({address})";
         }
     }
 
@@ -100,7 +96,8 @@ namespace NRaft
          */
         public int PeerId { get; private set; }
 
-        public PeerInfo GetPeer(int peerId) {
+        public PeerInfo GetPeer(int peerId)
+        {
             return peers[peerId];
         }
 
@@ -205,7 +202,12 @@ namespace NRaft
             return this;
         }
 
-        public PeerInfo AddPeer(string host, int port, bool bootstrap, int peerId=0)
+        public Config WithPeer(int peerId, string address) {
+            AddPeer(address, false, peerId);
+            return this;
+        }
+        
+        public PeerInfo AddPeer(string address, bool bootstrap, int peerId = 0)
         {
             lock (peers)
             {
@@ -221,18 +223,18 @@ namespace NRaft
                         peerId++;
                     }
                 }
-                PeerInfo p = new PeerInfo(peerId, host, port);
+                PeerInfo p = new PeerInfo(peerId, address);
                 peers.Add(peerId, p);
                 return p;
             }
         }
 
-        public PeerInfo AddPeer(int peerId, string host = "localhost", int port = 30140)
+        public PeerInfo AddPeer(int peerId, string address = "http://localhost:30140/api/cluster")
         {
-            if(peerId == 0)
+            if (peerId == 0)
                 throw new System.ArgumentOutOfRangeException("peerId must be greater than 0.");
 
-            PeerInfo p = new PeerInfo(peerId, host, port);
+            PeerInfo p = new PeerInfo(peerId, address);
             peers.Add(peerId, p);
             return p;
         }
@@ -259,7 +261,8 @@ namespace NRaft
             writer.Write(this.PeerId);
             writer.Write(this.SnapshotPartSize);
             writer.Write(peers.Count);
-            foreach(var peer in Peers) {
+            foreach (var peer in Peers)
+            {
                 peer.Serialize(writer);
             }
         }
@@ -279,11 +282,11 @@ namespace NRaft
             this.SnapshotPartSize = reader.ReadInt32();
             var cx = reader.ReadInt32();
             peers.Clear();
-            for (var i = 0; i < cx;i++)
+            for (var i = 0; i < cx; i++)
             {
                 var peer = new PeerInfo(reader);
-                peers.Add(peer.peerId, peer );
-        }
+                peers.Add(peer.peerId, peer);
+            }
         }
 
         public void RegisterCommands(ICommandManager manager)
@@ -293,18 +296,21 @@ namespace NRaft
             manager.RegisterCommand<NewTermCommand>();
         }
 
-        public static Config FromFile(string configFileName) {
-            if(!File.Exists(configFileName))
+        public static Config FromFile(string configFileName)
+        {
+            if (!File.Exists(configFileName))
                 return null;
 
             var cfg = new Config(0);
-            using(var reader = new BinaryReader(File.OpenRead(configFileName))) {
+            using (var reader = new BinaryReader(File.OpenRead(configFileName)))
+            {
                 ((IStateMachine)cfg).LoadState(reader);
             }
             return cfg;
         }
 
-        public void Save(string configFileName) {
+        public void Save(string configFileName)
+        {
             Directory.CreateDirectory(Path.GetDirectoryName(configFileName));
             using (var writer = new BinaryWriter(new FileStream(configFileName, FileMode.Create)))
             {

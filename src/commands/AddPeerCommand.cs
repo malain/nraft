@@ -8,8 +8,7 @@ namespace NRaft
      */
     public class AddPeerCommand : Command<Config>
     {
-        public string host;
-        public int port;
+        public string address;
         public int peerId;
         public bool bootstrap;
 
@@ -17,32 +16,29 @@ namespace NRaft
 
         public AddPeerCommand() { }
 
-        public AddPeerCommand(int peerId, string host, int port, bool bootstrap=false)
+        public AddPeerCommand(int peerId, string address, bool bootstrap=false)
         {
             this.peerId = peerId;
-            this.host = host;
-            this.port = port;
+            this.address = address;
             this.bootstrap = bootstrap;
         }
 
         public void ApplyTo(Config state)
         {
-            peerId = state.AddPeer(host, port, bootstrap, peerId).peerId;
+            peerId = state.AddPeer(address, bootstrap, peerId).peerId;
         }
 
         public void Serialize(BinaryWriter writer)
         {
             writer.Write(peerId);
-            writer.Write(host);
-            writer.Write(port);
+            writer.Write(address);
             writer.Write(bootstrap);
         }
 
         public void Deserialize(BinaryReader reader, int fileVersion)
         {
             peerId = reader.ReadInt32();
-            host = reader.ReadString();
-            port = reader.ReadInt32();
+            address = reader.ReadString();
             bootstrap = reader.ReadBoolean();
         }
     }

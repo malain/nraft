@@ -10,7 +10,7 @@ namespace NRaft
 
     ///////// Request Handlers ///////// 
 
-    public interface RaftRequests
+    public interface IRaftRequests
     {
         void HandleVoteRequest(string clusterName, long term, int candidateId, long lastLogIndex, long lastLogTerm, VoteResponseHandler handler);
 
@@ -24,7 +24,7 @@ namespace NRaft
     /**
      * Delegates all the asynchronous RPC implementation for raft to a third party.
      */
-    public interface RaftRPC
+    public interface IRaftRPC
     {
         ///////// Request Senders ///////// 
         void SendRequestVote(string clusterName, int peerId, long term, int candidateId, long lastLogIndex, long lastLogTerm, VoteResponseHandler handler);

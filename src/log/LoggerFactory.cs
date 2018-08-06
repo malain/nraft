@@ -10,8 +10,16 @@ namespace NRaft {
 
     public class DisposableAction : IDisposable
     {
+        private Action action;
+
+        public DisposableAction(Action action=null) {
+            this.action = action;
+        }
+
         public void Dispose()
         {
+            if(action != null)
+                action();
         }
     }
 

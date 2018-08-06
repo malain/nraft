@@ -9,9 +9,8 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
-using NRaft;
 
-namespace NRaftTest
+namespace NRaft
 {
     public class Program
     {
@@ -155,11 +154,7 @@ namespace NRaftTest
 
         private static void TestCluster()
         {
-            for (int i = 0; i < NUM_PEERS; i++)
-            {
-                logDirs[i] = Path.Combine("logs/test-" + (i + 1));
-                Directory.CreateDirectory(logDirs[i]);
-            }
+            CreateLogsDirectory();
 
             for (int i = 1; i <= NUM_PEERS; i++)
             {
@@ -169,11 +164,11 @@ namespace NRaftTest
 
                 for (int j = 0; j < NUM_PEERS; j++)
                 {
-                    cfg.AddPeer(j+1);
+                    cfg.AddPeer(j + 1);
                 }
 
                 RaftEngine raft = new RaftEngine(cfg, new TestStateMachine(), new RPC(rafts));
-       
+
                 Dump(raft);
                 rafts.Add(i, raft);
             }
@@ -203,17 +198,49 @@ namespace NRaftTest
             }
         }
 
+        private static void CreateLogsDirectory()
+        {
+            for (int i = 0; i < NUM_PEERS; i++)
+            {
+                logDirs[i] = Path.Combine("logs/test-" + (i + 1));
+                Directory.CreateDirectory(logDirs[i]);
+            }
+        }
+
+    public void TestCluster2() {
+        
+            CreateLogsDirectory();
+            for (int i = 0; i < NUM_PEERS; i++)
+            {
+                Config cfg = new Config(i)
+                        .WithClusterName("TEST");
+
+                for (int j = 0; j < NUM_PEERS; j++)
+                {
+                    cfg.AddPeer(j);
+                }
+            }
+
+            var node = new RaftNode<TestStateMachine>(cfg);
+            node.UseMiddleware(app);
+
+            node.Start();
+    }
         public static void Main(string[] args)
         {
-            TestCluster();
+            //TestCluster();
 
             // TestLog().GetAwaiter().GetResult();
             // TestSnapshots().GetAwaiter().GetResult();
-            // CreateWebHostBuilder(args).Build().Run();
-        }
+            var port = args[0];
+            var url = $"http://localhost:{port}/";
 
-        // public static IWebHostBuilder CreateWebHostBuilder(string[] args) =>
-        //     WebHost.CreateDefaultBuilder(args)
-        //         .UseStartup<Startup>();
+            Startup.peerId = port == "9999" ? 1 : 2;
+
+            WebHost.CreateDefaultBuilder(args)
+               .UseUrls(url)
+               .UseStartup<Startup>()
+               .Build().Run();
+        }
     }
 }
